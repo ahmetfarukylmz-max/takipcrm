@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { useFirestoreCollections } from './hooks/useFirestore';
 import {
     saveDocument,
@@ -21,6 +23,7 @@ import Orders from './components/pages/Orders';
 import Quotes from './components/pages/Quotes';
 import Meetings from './components/pages/Meetings';
 import Shipments from './components/pages/Shipments';
+import Reports from './components/pages/Reports';
 
 const LoadingScreen = () => (
     <div className="flex h-screen items-center justify-center bg-gray-100">
@@ -135,6 +138,15 @@ const CrmApp = () => {
                 );
             case 'Sevkiyat':
                 return <Shipments shipments={shipments} onDelivery={handleDelivery} />;
+            case 'Raporlar':
+                return (
+                    <Reports
+                        orders={orders}
+                        customers={customers}
+                        teklifler={teklifler}
+                        gorusmeler={gorusmeler}
+                    />
+                );
             default:
                 return (
                     <Dashboard
@@ -156,7 +168,8 @@ const CrmApp = () => {
     }
 
     return (
-        <div className="flex h-screen bg-gray-100 font-sans">
+        <div className="flex h-screen bg-gray-100 dark:bg-gray-900 font-sans">
+            <Toaster position="top-right" />
             <Sidebar
                 activePage={activePage}
                 setActivePage={setActivePage}
@@ -171,8 +184,10 @@ const CrmApp = () => {
 
 export default function App() {
     return (
-        <AuthProvider>
-            <CrmApp />
-        </AuthProvider>
+        <ThemeProvider>
+            <AuthProvider>
+                <CrmApp />
+            </AuthProvider>
+        </ThemeProvider>
     );
 }
