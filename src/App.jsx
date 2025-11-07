@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { useFirestoreCollections } from './hooks/useFirestore';
@@ -9,22 +10,27 @@ import {
     saveQuote,
     convertQuoteToOrder,
     markShipmentDelivered,
-    deleteDocument
+    deleteDocument,
+    logActivity
 } from './services/firestoreService';
 
 // Layout Components
 import Sidebar from './components/layout/Sidebar';
+import Modal from './components/common/Modal';
+import Guide from './components/common/Guide';
 
-// Page Components
+
+// Page Components - Lazy Loaded for better performance
 import LoginScreen from './components/pages/LoginScreen';
-import Dashboard from './components/pages/Dashboard';
-import Customers from './components/pages/Customers';
-import Products from './components/pages/Products';
-import Orders from './components/pages/Orders';
-import Quotes from './components/pages/Quotes';
-import Meetings from './components/pages/Meetings';
-import Shipments from './components/pages/Shipments';
-import Reports from './components/pages/Reports';
+const Dashboard = lazy(() => import('./components/pages/Dashboard'));
+const Customers = lazy(() => import('./components/pages/Customers'));
+const Products = lazy(() => import('./components/pages/Products'));
+const Orders = lazy(() => import('./components/pages/Orders'));
+const Quotes = lazy(() => import('./components/pages/Quotes'));
+const Meetings = lazy(() => import('./components/pages/Meetings'));
+const Shipments = lazy(() => import('./components/pages/Shipments'));
+const Reports = lazy(() => import('./components/pages/Reports'));
+const PdfGenerator = lazy(() => import('./components/pages/PdfGenerator'));
 
 const LoadingScreen = () => (
     <div className="flex h-screen items-center justify-center bg-gray-100">
@@ -57,6 +63,13 @@ const LoadingScreen = () => (
 const CrmApp = () => {
     const { user, loading } = useAuth();
     const [activePage, setActivePage] = useState('Anasayfa');
+    const [editingDocument, setEditingDocument] = useState(null);
+    const [showGuide, setShowGuide] = useState(false);
+    const [overdueItems, setOverdueItems] = useState([]);
+
+    const handleToggleGuide = () => {
+        setShowGuide(!showGuide);
+    };
 
     // Fetch all collections
     const { collections, connectionStatus } = useFirestoreCollections([
@@ -75,57 +88,166 @@ const CrmApp = () => {
     const teklifler = collections.teklifler || [];
     const gorusmeler = collections.gorusmeler || [];
 
+    const logUserActivity = (action, details) => {
+        logActivity(user.uid, action, details);
+    };
+
+    useEffect(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const overdueMeetings = (gorusmeler
+            .filter(item => !item.isDeleted)
+            .filter(meeting => {
+                const nextActionDate = meeting.next_action_date ? new Date(meeting.next_action_date) : null;
+                return nextActionDate && nextActionDate < today && meeting.status !== 'Tamamlandı' && meeting.status !== 'İptal Edildi';
+            })
+            .map(meeting => {
+                const customer = customers.find(c => c.id === meeting.customerId);
+                return { ...meeting, type: 'meeting', customerName: customer ? customer.name : 'Bilinmiyor' };
+            })
+        );
+
+        // Combine with other overdue items here in the future
+        setOverdueItems(overdueMeetings);
+    }, [gorusmeler, customers]);
+
     // Handler functions
-    const handleCustomerSave = (data) => saveDocument(user.uid, 'customers', data);
-    const handleProductSave = (data) => saveDocument(user.uid, 'products', data);
-    const handleOrderSave = (data) => saveOrder(user.uid, data);
-    const handleQuoteSave = (data) => saveQuote(user.uid, data);
-    const handleMeetingSave = (data) => saveDocument(user.uid, 'gorusmeler', data);
+    const handleCustomerSave = async (data) => {
+        const action = data.id ? 'UPDATE_CUSTOMER' : 'CREATE_CUSTOMER';
+        const details = { 
+            message: `Müşteri ${data.id ? 'güncellendi': 'oluşturuldu'}: ${data.name}`,
+            customerId: data.id
+        };
+        await saveDocument(user.uid, 'customers', data);
+        logUserActivity(action, details);
+    };
+    const handleProductSave = async (data) => {
+        const action = data.id ? 'UPDATE_PRODUCT' : 'CREATE_PRODUCT';
+        const details = { message: `Ürün ${data.id ? 'güncellendi': 'oluşturuldu'}: ${data.name}` };
+        await saveDocument(user.uid, 'products', data);
+        logUserActivity(action, details);
+    };
+    const handleOrderSave = async (data) => {
+        const customerName = customers.find(c => c.id === data.customerId)?.name || '';
+        const action = data.id ? 'UPDATE_ORDER' : 'CREATE_ORDER';
+        const details = { 
+            message: `${customerName} için sipariş ${data.id ? 'güncellendi' : 'oluşturuldu'}`,
+            amount: data.total_amount
+        };
+        await saveOrder(user.uid, data);
+        logUserActivity(action, details);
+    };
+    const handleQuoteSave = async (data) => {
+        const customerName = customers.find(c => c.id === data.customerId)?.name || '';
+        const action = data.id ? 'UPDATE_QUOTE' : 'CREATE_QUOTE';
+        const details = { 
+            message: `${customerName} için teklif ${data.id ? 'güncellendi' : 'oluşturuldu'}`,
+            amount: data.total_amount
+        };
+        await saveQuote(user.uid, data);
+        logUserActivity(action, details);
+    };
+    const handleMeetingSave = async (data) => {
+        const customerName = customers.find(c => c.id === data.customerId)?.name || '';
+        const action = data.id ? 'UPDATE_MEETING' : 'CREATE_MEETING';
+        const details = { message: `${customerName} ile görüşme ${data.id ? 'güncellendi' : 'oluşturuldu'}` };
+        await saveDocument(user.uid, 'gorusmeler', data);
+        logUserActivity(action, details);
+    };
 
     // Shipment handler
     const handleShipmentSave = async (shipmentData) => {
         try {
-            // Save shipment to firestore
             await saveDocument(user.uid, 'shipments', shipmentData);
-
-            // Update order status if needed
-            // You can implement logic here to check if order is fully shipped
-            // and update order status to 'Tamamlandı' or keep it as is
-
-            alert('Sevkiyat başarıyla kaydedildi!');
+            const order = orders.find(o => o.id === shipmentData.orderId);
+            const customerName = customers.find(c => c.id === order?.customerId)?.name || '';
+            logUserActivity('CREATE_SHIPMENT', { message: `${customerName} müşterisinin siparişi için sevkiyat oluşturuldu` });
+            toast.success('Sevkiyat başarıyla kaydedildi!');
         } catch (error) {
             console.error('Sevkiyat kaydedilemedi:', error);
-            alert('Sevkiyat kaydedilemedi!');
+            toast.error('Sevkiyat kaydedilemedi!');
         }
     };
 
     const handleShipmentUpdate = async (shipmentData) => {
         try {
             await saveDocument(user.uid, 'shipments', shipmentData);
-            alert('Sevkiyat başarıyla güncellendi!');
+            const order = orders.find(o => o.id === shipmentData.orderId);
+            const customerName = customers.find(c => c.id === order?.customerId)?.name || '';
+            logUserActivity('UPDATE_SHIPMENT', { message: `${customerName} müşterisinin sevkiyatı güncellendi` });
+            toast.success('Sevkiyat başarıyla güncellendi!');
         } catch (error) {
             console.error('Sevkiyat güncellenemedi:', error);
-            alert('Sevkiyat güncellenemedi!');
+            toast.error('Sevkiyat güncellenemedi!');
         }
     };
 
     // Delete handler functions
-    const handleCustomerDelete = (id) => deleteDocument(user.uid, 'customers', id);
-    const handleProductDelete = (id) => deleteDocument(user.uid, 'products', id);
-    const handleOrderDelete = (id) => deleteDocument(user.uid, 'orders', id);
-    const handleQuoteDelete = (id) => deleteDocument(user.uid, 'teklifler', id);
-    const handleMeetingDelete = (id) => deleteDocument(user.uid, 'gorusmeler', id);
-    const handleShipmentDelete = (id) => deleteDocument(user.uid, 'shipments', id);
+    const handleCustomerDelete = (id) => {
+        const customer = customers.find(c => c.id === id);
+        deleteDocument(user.uid, 'customers', id).then(() => {
+            logUserActivity('DELETE_CUSTOMER', { message: `Müşteri silindi: ${customer?.name}` });
+        });
+    };
+    const handleProductDelete = (id) => {
+        const product = products.find(p => p.id === id);
+        deleteDocument(user.uid, 'products', id).then(() => {
+            logUserActivity('DELETE_PRODUCT', { message: `Ürün silindi: ${product?.name}` });
+        });
+    };
+    const handleOrderDelete = (id) => {
+        const order = orders.find(o => o.id === id);
+        const customerName = customers.find(c => c.id === order?.customerId)?.name || '';
+        deleteDocument(user.uid, 'orders', id).then(() => {
+            logUserActivity('DELETE_ORDER', { message: `${customerName} müşterisinin siparişi silindi` });
+        });
+    };
+    const handleQuoteDelete = (id) => {
+        const quote = teklifler.find(q => q.id === id);
+        const customerName = customers.find(c => c.id === quote?.customerId)?.name || '';
+        deleteDocument(user.uid, 'teklifler', id).then(() => {
+            logUserActivity('DELETE_QUOTE', { message: `${customerName} müşterisinin teklifi silindi` });
+        });
+    };
+    const handleMeetingDelete = (id) => {
+        const meeting = gorusmeler.find(m => m.id === id);
+        const customerName = customers.find(c => c.id === meeting?.customerId)?.name || '';
+        deleteDocument(user.uid, 'gorusmeler', id).then(() => {
+            logUserActivity('DELETE_MEETING', { message: `${customerName} müşterisiyle olan görüşme silindi` });
+        });
+    };
+    const handleShipmentDelete = (id) => {
+        const shipment = shipments.find(s => s.id === id);
+        const order = orders.find(o => o.id === shipment?.orderId);
+        const customerName = customers.find(c => c.id === order?.customerId)?.name || '';
+        deleteDocument(user.uid, 'shipments', id).then(() => {
+            logUserActivity('DELETE_SHIPMENT', { message: `${customerName} müşterisinin sevkiyatı silindi` });
+        });
+    };
 
     const handleConvertToOrder = async (quote) => {
         await convertQuoteToOrder(user.uid, quote);
+        const customerName = customers.find(c => c.id === quote.customerId)?.name || '';
+        logUserActivity('CONVERT_QUOTE_TO_ORDER', { 
+            message: `${customerName} müşterisinin teklifi siparişe dönüştürüldü`,
+            amount: quote.total_amount
+        });
     };
 
     const handleDelivery = async (shipmentId) => {
         const shipment = shipments.find(s => s.id === shipmentId);
         if (shipment) {
             await markShipmentDelivered(user.uid, shipmentId, shipment.orderId);
+            const order = orders.find(o => o.id === shipment.orderId);
+            const customerName = customers.find(c => c.id === order?.customerId)?.name || '';
+            logUserActivity('MARK_SHIPMENT_DELIVERED', { message: `${customerName} müşterisinin sevkiyatı teslim edildi olarak işaretlendi` });
         }
+    };
+
+    const handleGeneratePdf = (doc) => {
+        setEditingDocument(doc);
+        setActivePage('belge-hazirla');
     };
 
     // Render page based on activePage state
@@ -138,6 +260,10 @@ const CrmApp = () => {
                         orders={orders}
                         teklifler={teklifler}
                         gorusmeler={gorusmeler}
+                        products={products}
+                        overdueItems={overdueItems}
+                        setActivePage={setActivePage}
+                        onMeetingSave={handleMeetingSave}
                     />
                 );
             case 'Müşteriler':
@@ -153,6 +279,7 @@ const CrmApp = () => {
                         products={products}
                         onQuoteSave={handleQuoteSave}
                         onOrderSave={handleOrderSave}
+                        onShipmentUpdate={handleShipmentUpdate}
                     />
                 );
             case 'Ürünler':
@@ -161,11 +288,14 @@ const CrmApp = () => {
                 return (
                     <Quotes
                         quotes={teklifler}
+                        orders={orders}
+                        shipments={shipments}
                         onSave={handleQuoteSave}
                         onDelete={handleQuoteDelete}
                         onConvertToOrder={handleConvertToOrder}
                         customers={customers}
                         products={products}
+                        onGeneratePdf={handleGeneratePdf}
                     />
                 );
             case 'Siparişler':
@@ -177,6 +307,7 @@ const CrmApp = () => {
                         onShipment={handleShipmentSave}
                         customers={customers}
                         products={products}
+                        onGeneratePdf={handleGeneratePdf}
                     />
                 );
             case 'Görüşmeler':
@@ -198,8 +329,12 @@ const CrmApp = () => {
                         customers={customers}
                         teklifler={teklifler}
                         gorusmeler={gorusmeler}
+                        shipments={shipments}
+                        products={products}
                     />
                 );
+            case 'belge-hazirla':
+                return <PdfGenerator doc={editingDocument} customers={customers} products={products} />;
             default:
                 return (
                     <Dashboard
@@ -207,6 +342,10 @@ const CrmApp = () => {
                         orders={orders}
                         teklifler={teklifler}
                         gorusmeler={gorusmeler}
+                        products={products}
+                        overdueItems={overdueItems}
+                        setActivePage={setActivePage}
+                        onMeetingSave={handleMeetingSave}
                     />
                 );
         }
@@ -223,14 +362,50 @@ const CrmApp = () => {
     return (
         <div className="flex h-screen bg-gray-100 dark:bg-gray-900 font-sans">
             <Toaster position="top-right" />
+            
             <Sidebar
                 activePage={activePage}
                 setActivePage={setActivePage}
                 connectionStatus={connectionStatus}
+                onToggleGuide={handleToggleGuide}
+                overdueItems={overdueItems}
             />
             <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-                {renderPage()}
+                <Suspense fallback={
+                    <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-3 text-lg text-gray-600 dark:text-gray-400">
+                            <svg
+                                className="animate-spin h-5 w-5 text-blue-500"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                ></circle>
+                                <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                            </svg>
+                            <span>Yükleniyor...</span>
+                        </div>
+                    </div>
+                }>
+                    {renderPage()}
+                </Suspense>
             </main>
+            {showGuide && (
+                <Modal show={showGuide} onClose={handleToggleGuide} title="Kullanıcı Rehberi">
+                    <Guide />
+                </Modal>
+            )}
         </div>
     );
 };

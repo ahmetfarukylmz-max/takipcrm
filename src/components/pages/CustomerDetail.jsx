@@ -1,4 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import Modal from '../common/Modal';
+import QuoteForm from '../forms/QuoteForm';
+import OrderForm from '../forms/OrderForm';
 import { WhatsAppIcon } from '../icons';
 import { formatDate, formatCurrency, formatPhoneNumberForWhatsApp, getStatusClass } from '../../utils/formatters';
 
@@ -10,21 +13,41 @@ const CustomerDetail = ({
     shipments = [],
     onEdit,
     onDelete,
-    onClose,
     onCreateQuote,
     onCreateOrder,
     onViewOrder,
-    onViewQuote
+    onViewQuote,
+    onViewShipment, // Added prop
+    onQuoteSave, // Added prop
+    onOrderSave, // Added prop
+    products,    // Added prop
 }) => {
     const [activeTab, setActiveTab] = useState('overview');
-    const [selectedItem, setSelectedItem] = useState(null);
-    const [itemType, setItemType] = useState(null);
+    const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
+    const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+
+    const handleOpenQuoteModal = () => setIsQuoteModalOpen(true);
+    const handleOpenOrderModal = () => setIsOrderModalOpen(true);
+
+    const handleQuoteSave = (quoteData) => {
+        const finalQuoteData = { ...quoteData, customerId: customer.id };
+        onQuoteSave(finalQuoteData);
+        setIsQuoteModalOpen(false);
+    };
+
+    const handleOrderSave = (orderData) => {
+        const finalOrderData = { ...orderData, customerId: customer.id };
+        onOrderSave(finalOrderData);
+        setIsOrderModalOpen(false);
+    };
 
     const handleItemClick = (activity) => {
         if (activity.type === 'order') {
             onViewOrder && onViewOrder(activity.data);
         } else if (activity.type === 'quote') {
             onViewQuote && onViewQuote(activity.data);
+        } else if (activity.type === 'shipment') {
+            onViewShipment && onViewShipment(activity.data);
         }
     };
 
@@ -49,6 +72,44 @@ const CustomerDetail = ({
             pendingQuotes
         };
     }, [customer.id, orders, quotes, meetings]);
+
+    // Calculate top products for this customer
+    const topProducts = useMemo(() => {
+        const customerOrders = orders.filter(o => o.customerId === customer.id && !o.isDeleted);
+        const productStats = {};
+
+        customerOrders.forEach(order => {
+            if (order.items && Array.isArray(order.items)) {
+                order.items.forEach(item => {
+                    const productId = item.productId;
+                    if (!productStats[productId]) {
+                        productStats[productId] = {
+                            quantity: 0,
+                            revenue: 0,
+                            orderCount: 0
+                        };
+                    }
+                    productStats[productId].quantity += item.quantity || 0;
+                    productStats[productId].revenue += (item.quantity || 0) * (item.unit_price || 0);
+                    productStats[productId].orderCount += 1;
+                });
+            }
+        });
+
+        return Object.entries(productStats)
+            .map(([productId, stats]) => {
+                const product = products?.find(p => p.id === productId && !p.isDeleted);
+                return {
+                    id: productId,
+                    name: product?.name || 'Bilinmeyen Ürün',
+                    quantity: stats.quantity,
+                    revenue: stats.revenue,
+                    orderCount: stats.orderCount
+                };
+            })
+            .sort((a, b) => b.quantity - a.quantity)
+            .slice(0, 5);
+    }, [customer.id, orders, products]);
 
     // Create timeline of all activities
     const timeline = useMemo(() => {
@@ -202,7 +263,7 @@ const CustomerDetail = ({
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <button
-                        onClick={onCreateQuote}
+                        onClick={handleOpenQuoteModal}
                         className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center gap-2"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,7 +272,7 @@ const CustomerDetail = ({
                         Yeni Teklif
                     </button>
                     <button
-                        onClick={onCreateOrder}
+                        onClick={handleOpenOrderModal}
                         className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,6 +294,27 @@ const CustomerDetail = ({
                     </button>
                 </div>
             </div>
+
+            {/* Modals for Quote and Order Forms */}
+            <Modal show={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Yeni Teklif Oluştur" maxWidth="max-w-4xl">
+                <QuoteForm
+                    quote={{ customerId: customer.id }}
+                    onSave={handleQuoteSave}
+                    onCancel={() => setIsQuoteModalOpen(false)}
+                    customers={[customer]} // Pass only the current customer
+                    products={products}
+                />
+            </Modal>
+
+            <Modal show={isOrderModalOpen} onClose={() => setIsOrderModalOpen(false)} title="Yeni Sipariş Oluştur" maxWidth="max-w-4xl">
+                <OrderForm
+                    order={{ customerId: customer.id }}
+                    onSave={handleOrderSave}
+                    onCancel={() => setIsOrderModalOpen(false)}
+                    customers={[customer]} // Pass only the current customer
+                    products={products}
+                />
+            </Modal>
 
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -268,7 +350,8 @@ const CustomerDetail = ({
                         { id: 'overview', label: 'Özet' },
                         { id: 'timeline', label: 'Aktiviteler' },
                         { id: 'orders', label: `Siparişler (${stats.totalOrders})` },
-                        { id: 'quotes', label: `Teklifler (${stats.totalQuotes})` }
+                        { id: 'quotes', label: `Teklifler (${stats.totalQuotes})` },
+                        { id: 'top-products', label: 'Çok Satanlar' }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -297,7 +380,7 @@ const CustomerDetail = ({
                                         key={index}
                                         onClick={() => handleItemClick(activity)}
                                         className={`flex items-center gap-3 text-sm p-2 rounded-lg transition-colors ${
-                                            (activity.type === 'order' || activity.type === 'quote')
+                                            (activity.type === 'order' || activity.type === 'quote' || activity.type === 'shipment')
                                                 ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700'
                                                 : ''
                                         }`}
@@ -336,7 +419,7 @@ const CustomerDetail = ({
                                     <div
                                         onClick={() => handleItemClick(activity)}
                                         className={`bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm transition-colors ${
-                                            (activity.type === 'order' || activity.type === 'quote')
+                                            (activity.type === 'order' || activity.type === 'quote' || activity.type === 'shipment')
                                                 ? 'cursor-pointer hover:border-blue-400 dark:hover:border-blue-500'
                                                 : ''
                                         }`}
@@ -433,6 +516,39 @@ const CustomerDetail = ({
                                     <tr>
                                         <td colSpan="3" className="p-8 text-center text-gray-500 dark:text-gray-400">
                                             Henüz teklif bulunmuyor
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {activeTab === 'top-products' && (
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                <tr>
+                                    <th className="p-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Ürün Adı</th>
+                                    <th className="p-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Miktar</th>
+                                    <th className="p-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Toplam Gelir</th>
+                                    <th className="p-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Sipariş Sayısı</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {topProducts.length > 0 ? (
+                                    topProducts.map(product => (
+                                        <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                            <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{product.name}</td>
+                                            <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{product.quantity} adet</td>
+                                            <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(product.revenue)}</td>
+                                            <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{product.orderCount}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4" className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                            Bu müşteriye ait ürün satışı bulunmuyor.
                                         </td>
                                     </tr>
                                 )}

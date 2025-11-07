@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import Modal from '../common/Modal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import ProductForm from '../forms/ProductForm';
@@ -6,7 +6,7 @@ import SearchBar from '../common/SearchBar';
 import { PlusIcon } from '../icons';
 import { formatCurrency } from '../../utils/formatters';
 
-const Products = ({ products, onSave, onDelete }) => {
+const Products = memo(({ products, onSave, onDelete }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentProduct, setCurrentProduct] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, product: null });
@@ -212,6 +212,8 @@ const Products = ({ products, onSave, onDelete }) => {
             />
         </div>
     );
-};
+});
+
+Products.displayName = 'Products';
 
 export default Products;

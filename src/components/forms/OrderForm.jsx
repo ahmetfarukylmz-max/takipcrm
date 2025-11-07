@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FormInput from '../common/FormInput';
 import FormSelect from '../common/FormSelect';
+import FormTextarea from '../common/FormTextarea';
 import ItemEditor from './ItemEditor';
 import { turkeyVATRates, currencies, DEFAULT_CURRENCY } from '../../constants';
 import { formatCurrency } from '../../utils/formatters';
@@ -13,12 +14,13 @@ const OrderForm = ({ order, onSave, onCancel, customers, products }) => {
         vatRate: 20,
         paymentType: 'Peşin',
         paymentTerm: '',
-        currency: DEFAULT_CURRENCY
+        currency: DEFAULT_CURRENCY,
+        notes: ''
     });
     const [items, setItems] = useState(
         (order?.items || []).map(item => ({
             ...item,
-            unit: item.unit || 'Adet'
+            unit: 'Kg'
         }))
     );
 
@@ -100,6 +102,15 @@ const OrderForm = ({ order, onSave, onCancel, customers, products }) => {
             </div>
 
             <ItemEditor items={items} setItems={setItems} products={products} />
+
+            <FormTextarea
+                label="Özel Notlar"
+                name="notes"
+                value={formData.notes}
+                onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Sipariş ile ilgili özel notlar ekleyebilirsiniz..."
+                rows={3}
+            />
 
             <div className="grid grid-cols-2 gap-4 items-end">
                 <FormSelect

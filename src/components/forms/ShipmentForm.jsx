@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 
 const ShipmentForm = ({ order, products, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
         shipment_date: new Date().toISOString().split('T')[0],
         transporter: '',
-        delivery_date: '',
+        notes: '',
         items: []
     });
 
@@ -41,13 +42,13 @@ const ShipmentForm = ({ order, products, onSave, onCancel }) => {
 
         // Validate
         if (!formData.transporter.trim()) {
-            alert('Lütfen nakliye firması giriniz!');
+            toast.error('Lütfen nakliye firması giriniz!');
             return;
         }
 
         const itemsToShip = formData.items.filter(item => item.toShipQty > 0);
         if (itemsToShip.length === 0) {
-            alert('Lütfen en az bir ürün için sevk miktarı giriniz!');
+            toast.error('Lütfen en az bir ürün için sevk miktarı giriniz!');
             return;
         }
 
@@ -56,8 +57,8 @@ const ShipmentForm = ({ order, products, onSave, onCancel }) => {
             customerId: order.customerId,
             shipment_date: formData.shipment_date,
             transporter: formData.transporter,
-            delivery_date: formData.delivery_date || null,
-            status: 'Gönderildi',
+            notes: formData.notes || '',
+            status: 'Yolda',
             items: itemsToShip.map(item => ({
                 productId: item.productId,
                 productName: item.productName,
@@ -91,33 +92,32 @@ const ShipmentForm = ({ order, products, onSave, onCancel }) => {
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Sevk Tarihi *
-                            </label>
-                            <input
-                                type="date"
-                                name="shipment_date"
-                                value={formData.shipment_date}
-                                onChange={handleChange}
-                                required
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            />
-                        </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Sevk Tarihi *
+                        </label>
+                        <input
+                            type="date"
+                            name="shipment_date"
+                            value={formData.shipment_date}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        />
+                    </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Tahmini Teslim Tarihi
-                            </label>
-                            <input
-                                type="date"
-                                name="delivery_date"
-                                value={formData.delivery_date}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            />
-                        </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Özel Notlar
+                        </label>
+                        <textarea
+                            name="notes"
+                            value={formData.notes}
+                            onChange={handleChange}
+                            rows={3}
+                            placeholder="Sevkiyat ile ilgili özel notlar ekleyebilirsiniz..."
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        />
                     </div>
                 </div>
             </div>

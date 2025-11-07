@@ -7,7 +7,8 @@ const CustomerForm = ({ customer, onSave, onCancel }) => {
         contact_person: '',
         phone: '',
         email: '',
-        address: ''
+        address: '',
+        city: ''
     });
 
     const handleChange = (e) => {
@@ -51,6 +52,12 @@ const CustomerForm = ({ customer, onSave, onCancel }) => {
                 label="Adres"
                 name="address"
                 value={formData.address}
+                onChange={handleChange}
+            />
+            <FormInput
+                label="Şehir"
+                name="city"
+                value={formData.city}
                 onChange={handleChange}
             />
             <div className="flex justify-end gap-3 pt-4">

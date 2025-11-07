@@ -87,7 +87,7 @@ export const useFirestoreCollections = (collectionNames) => {
         });
 
         return () => unsubscribers.forEach(unsub => unsub());
-    }, [user, collectionNames.join(',')]);
+    }, [user, JSON.stringify(collectionNames)]);
 
     return { collections, connectionStatus };
 };

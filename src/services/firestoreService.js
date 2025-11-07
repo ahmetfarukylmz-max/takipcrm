@@ -1,5 +1,26 @@
-import { collection, doc, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+
+/**
+ * Logs a user activity to the activity_log collection.
+ * @param {string} userId - The ID of the user performing the action.
+ * @param {string} action - A short description of the action (e.g., 'CREATE_CUSTOMER', 'UPDATE_ORDER').
+ * @param {Object} details - An object containing details about the activity.
+ */
+export const logActivity = async (userId, action, details) => {
+    if (!userId) return;
+    try {
+        const logData = {
+            userId,
+            action,
+            details,
+            timestamp: serverTimestamp(),
+        };
+        await addDoc(collection(db, `users/${userId}/activity_log`), logData);
+    } catch (error) {
+        console.error("Error logging activity:", error);
+    }
+};
 
 /**
  * Generic save function for Firestore documents
@@ -76,11 +97,15 @@ export const convertQuoteToOrder = async (userId, quote) => {
         total_amount: quote.total_amount,
         order_date: new Date().toISOString().slice(0, 10),
         status: 'Bekliyor',
-        shipmentId: null
+        shipmentId: null,
+        quoteId: quote.id
     };
 
-    await addDoc(collection(db, `users/${userId}/orders`), newOrder);
-    await updateDoc(doc(db, `users/${userId}/teklifler`, quote.id), { status: 'Onaylandı' });
+    const orderRef = await addDoc(collection(db, `users/${userId}/orders`), newOrder);
+    await updateDoc(doc(db, `users/${userId}/teklifler`, quote.id), {
+        status: 'Onaylandı',
+        orderId: orderRef.id
+    });
 };
 
 /**

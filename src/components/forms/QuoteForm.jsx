@@ -1,24 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import FormInput from '../common/FormInput';
 import FormSelect from '../common/FormSelect';
+import FormTextarea from '../common/FormTextarea';
 import ItemEditor from './ItemEditor';
 import { turkeyVATRates, currencies, DEFAULT_CURRENCY } from '../../constants';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatDate } from '../../utils/formatters';
 
-const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
+const QuoteForm = ({ quote, onSave, onCancel, customers, products, orders = [], shipments = [] }) => {
     const [formData, setFormData] = useState(quote || {
         customerId: customers[0]?.id || '',
         items: [],
         gecerlilik_tarihi: '',
+        status: 'Hazırlandı',
         vatRate: 20,
         paymentType: 'Peşin',
         paymentTerm: '',
-        currency: DEFAULT_CURRENCY
+        currency: DEFAULT_CURRENCY,
+        notes: '',
+        rejection_reason: ''
     });
     const [items, setItems] = useState(
         (quote?.items || []).map(item => ({
             ...item,
-            unit: item.unit || 'Adet'
+            unit: 'Kg'
         }))
     );
 
@@ -36,6 +40,35 @@ const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
             total_amount: total
         });
     };
+
+    const timelineEvents = useMemo(() => {
+        if (!quote) return [];
+
+        const events = [
+            { date: quote.teklif_tarihi, description: 'Teklif oluşturuldu.', status: 'Hazırlandı' }
+        ];
+
+        if (quote.status === 'Onaylandı' && quote.orderId) {
+            const order = orders.find(o => o.id === quote.orderId);
+            if (order) {
+                events.push({ date: order.order_date, description: `Siparişe dönüştürüldü. (Sipariş No: #${order.id.slice(-6)})`, status: 'Onaylandı' });
+
+                const relatedShipments = shipments.filter(s => s.orderId === order.id);
+                relatedShipments.forEach(shipment => {
+                    events.push({ date: shipment.shipment_date, description: `Sipariş sevk edildi. (Nakliyeci: ${shipment.transporter})`, status: shipment.status });
+                    if (shipment.status === 'Teslim Edildi') {
+                        events.push({ date: shipment.delivery_date, description: 'Sipariş teslim edildi.', status: 'Teslim Edildi' });
+                    }
+                });
+            }
+        }
+
+        if (quote.status === 'Reddedildi') {
+            events.push({ date: null, description: `Teklif reddedildi. Neden: ${quote.rejection_reason || 'Belirtilmemiş'}` , status: 'Reddedildi' });
+        }
+
+        return events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    }, [quote, orders, shipments]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -61,6 +94,30 @@ const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
                     value={formData.gecerlilik_tarihi}
                     onChange={e => setFormData({ ...formData, gecerlilik_tarihi: e.target.value })}
                 />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormSelect
+                    label="Durum"
+                    name="status"
+                    value={formData.status}
+                    onChange={e => setFormData({ ...formData, status: e.target.value })}
+                >
+                    <option value="Hazırlandı">Hazırlandı</option>
+                    <option value="Onaylandı">Onaylandı</option>
+                    <option value="Reddedildi">Reddedildi</option>
+                </FormSelect>
+
+                {formData.status === 'Reddedildi' && (
+                    <FormTextarea
+                        label="Reddedilme Nedeni"
+                        name="rejection_reason"
+                        value={formData.rejection_reason}
+                        onChange={e => setFormData({ ...formData, rejection_reason: e.target.value })}
+                        placeholder="Teklifin neden reddedildiğini açıklayın..."
+                        rows={3}
+                    />
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -101,6 +158,15 @@ const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
 
             <ItemEditor items={items} setItems={setItems} products={products} />
 
+            <FormTextarea
+                label="Özel Notlar"
+                name="notes"
+                value={formData.notes}
+                onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Teklif ile ilgili özel notlar ekleyebilirsiniz..."
+                rows={3}
+            />
+
             <div className="grid grid-cols-2 gap-4 items-end">
                 <FormSelect
                     label="KDV Oranı"
@@ -130,6 +196,20 @@ const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
                 </div>
             </div>
 
+            {quote && (
+                <div className="pt-4 border-t">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Teklif Zaman Çizelgesi</h3>
+                    <div className="space-y-2">
+                        {timelineEvents.map((event, index) => (
+                            <div key={index} className="flex items-center gap-3">
+                                <div className="text-xs text-gray-500">{formatDate(event.date)}</div>
+                                <div className="text-sm text-gray-700">{event.description}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-end gap-3 pt-4 border-t">
                 <button
                     type="button"
@@ -145,6 +225,7 @@ const QuoteForm = ({ quote, onSave, onCancel, customers, products }) => {
                     Teklifi Kaydet
                 </button>
             </div>
+
         </form>
     );
 };

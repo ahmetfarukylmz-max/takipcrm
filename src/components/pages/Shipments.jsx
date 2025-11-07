@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
+import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
 import ConfirmDialog from '../common/ConfirmDialog';
+import SearchBar from '../common/SearchBar';
 import { formatDate, getStatusClass } from '../../utils/formatters';
 
-const ShipmentEditForm = ({ shipment, orders = [], products = [], shipments = [], onSave, onCancel, readOnly = false }) => {
+const ShipmentEditForm = ({ shipment, orders = [], shipments = [], onSave, onCancel, readOnly = false }) => {
     const [formData, setFormData] = useState({
         shipment_date: shipment.shipment_date || '',
         transporter: shipment.transporter || '',
-        delivery_date: shipment.delivery_date || ''
+        notes: shipment.notes || ''
     });
 
     // Find the order related to this shipment
@@ -22,7 +24,7 @@ const ShipmentEditForm = ({ shipment, orders = [], products = [], shipments = []
         e.preventDefault();
 
         if (!formData.transporter.trim()) {
-            alert('Lütfen nakliye firması giriniz!');
+            toast.error('Lütfen nakliye firması giriniz!');
             return;
         }
 
@@ -54,35 +56,34 @@ const ShipmentEditForm = ({ shipment, orders = [], products = [], shipments = []
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Sevk Tarihi *
-                            </label>
-                            <input
-                                type="date"
-                                name="shipment_date"
-                                value={formData.shipment_date}
-                                onChange={handleChange}
-                                required
-                                disabled={readOnly}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                            />
-                        </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Sevk Tarihi *
+                        </label>
+                        <input
+                            type="date"
+                            name="shipment_date"
+                            value={formData.shipment_date}
+                            onChange={handleChange}
+                            required
+                            disabled={readOnly}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                    </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Tahmini Teslim Tarihi
-                            </label>
-                            <input
-                                type="date"
-                                name="delivery_date"
-                                value={formData.delivery_date}
-                                onChange={handleChange}
-                                disabled={readOnly}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                            />
-                        </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Özel Notlar
+                        </label>
+                        <textarea
+                            name="notes"
+                            value={formData.notes}
+                            onChange={handleChange}
+                            rows={3}
+                            placeholder="Sevkiyat ile ilgili özel notlar..."
+                            disabled={readOnly}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
                     </div>
                 </div>
             </div>
@@ -158,11 +159,19 @@ const ShipmentEditForm = ({ shipment, orders = [], products = [], shipments = []
     );
 };
 
-const Shipments = ({ shipments, orders = [], products = [], customers = [], onDelivery, onUpdate, onDelete }) => {
+const Shipments = memo(({ shipments, orders = [], products = [], customers = [], onDelivery, onUpdate, onDelete }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentShipment, setCurrentShipment] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, shipment: null });
     const [selectedItems, setSelectedItems] = useState(new Set());
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filters, setFilters] = useState({
+        status: 'Tümü',
+        dateRange: 'Tümü',
+        customer: 'Tümü'
+    });
+    const [sortBy, setSortBy] = useState('shipment_date');
+    const [sortOrder, setSortOrder] = useState('desc');
 
     const handleDelivery = (shipmentId) => {
         onDelivery(shipmentId);
@@ -206,11 +215,10 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
     };
 
     const handleSelectAll = () => {
-        const activeShipments = shipments.filter(s => !s.isDeleted);
-        if (selectedItems.size === activeShipments.length) {
+        if (selectedItems.size === filteredAndSortedShipments.length) {
             setSelectedItems(new Set());
         } else {
-            setSelectedItems(new Set(activeShipments.map(s => s.id)));
+            setSelectedItems(new Set(filteredAndSortedShipments.map(s => s.id)));
         }
     };
 
@@ -229,6 +237,72 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
 
     const activeShipments = shipments.filter(s => !s.isDeleted);
 
+    // Apply filters, search, and sorting
+    const filteredAndSortedShipments = useMemo(() => {
+        return activeShipments.filter(shipment => {
+            const order = orders.find(o => o.id === shipment.orderId);
+            const customer = customers.find(c => c.id === order?.customerId);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Search filter
+            if (searchQuery.trim()) {
+                const query = searchQuery.toLowerCase();
+                const matchesSearch =
+                    customer?.name?.toLowerCase().includes(query) ||
+                    shipment.transporter?.toLowerCase().includes(query) ||
+                    shipment.trackingNumber?.toLowerCase().includes(query);
+
+                if (!matchesSearch) return false;
+            }
+
+            // Status filter
+            if (filters.status !== 'Tümü' && shipment.status !== filters.status) {
+                return false;
+            }
+
+            // Date range filter
+            if (filters.dateRange !== 'Tümü') {
+                const shipmentDate = new Date(shipment.shipment_date);
+                shipmentDate.setHours(0, 0, 0, 0);
+
+                if (filters.dateRange === 'Bugün') {
+                    if (shipmentDate.getTime() !== today.getTime()) return false;
+                } else if (filters.dateRange === 'Bu Hafta') {
+                    const weekAgo = new Date(today);
+                    weekAgo.setDate(today.getDate() - 7);
+                    if (shipmentDate < weekAgo || shipmentDate > today) return false;
+                } else if (filters.dateRange === 'Bu Ay') {
+                    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+                    if (shipmentDate < monthStart || shipmentDate > today) return false;
+                }
+            }
+
+            // Customer filter
+            if (filters.customer !== 'Tümü' && customer?.id !== filters.customer) {
+                return false;
+            }
+
+            return true;
+        }).sort((a, b) => {
+            let comparison = 0;
+
+            if (sortBy === 'shipment_date') {
+                comparison = new Date(a.shipment_date) - new Date(b.shipment_date);
+            } else if (sortBy === 'status') {
+                comparison = (a.status || '').localeCompare(b.status || '');
+            } else if (sortBy === 'customer') {
+                const orderA = orders.find(o => o.id === a.orderId);
+                const orderB = orders.find(o => o.id === b.orderId);
+                const customerA = customers.find(c => c.id === orderA?.customerId)?.name || '';
+                const customerB = customers.find(c => c.id === orderB?.customerId)?.name || '';
+                comparison = customerA.localeCompare(customerB);
+            }
+
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
+    }, [activeShipments, searchQuery, filters, sortBy, sortOrder, orders, customers]);
+
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -246,8 +320,85 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
                 )}
             </div>
 
-            <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-                {activeShipments.length} sevkiyat gösteriliyor
+            {/* Search Bar */}
+            <div className="mb-4">
+                <SearchBar
+                    placeholder="Müşteri, nakliye firması veya takip no ara..."
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                />
+            </div>
+
+            {/* Filters and Sorting */}
+            <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Durum</label>
+                        <select
+                            value={filters.status}
+                            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        >
+                            <option>Tümü</option>
+                            <option>Hazırlanıyor</option>
+                            <option>Yolda</option>
+                            <option>Teslim Edildi</option>
+                            <option>İptal Edildi</option>
+                            <option>İade Edildi</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tarih</label>
+                        <select
+                            value={filters.dateRange}
+                            onChange={(e) => setFilters({ ...filters, dateRange: e.target.value })}
+                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        >
+                            <option>Tümü</option>
+                            <option>Bugün</option>
+                            <option>Bu Hafta</option>
+                            <option>Bu Ay</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Müşteri</label>
+                        <select
+                            value={filters.customer}
+                            onChange={(e) => setFilters({ ...filters, customer: e.target.value })}
+                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        >
+                            <option>Tümü</option>
+                            {customers.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sıralama</label>
+                        <div className="flex gap-2">
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            >
+                                <option value="shipment_date">Sevk Tarihi</option>
+                                <option value="status">Durum</option>
+                                <option value="customer">Müşteri</option>
+                            </select>
+                            <button
+                                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                                className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
+                                title={sortOrder === 'asc' ? 'Artan' : 'Azalan'}
+                            >
+                                {sortOrder === 'asc' ? '↑' : '↓'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                    {filteredAndSortedShipments.length} sevkiyat gösteriliyor
+                    {filteredAndSortedShipments.length !== activeShipments.length && ` (${activeShipments.length} toplam)`}
+                </div>
             </div>
 
             <div className="overflow-auto rounded-lg shadow bg-white dark:bg-gray-800">
@@ -257,12 +408,12 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
                             <th className="p-3 text-sm font-semibold tracking-wide text-left">
                                 <input
                                     type="checkbox"
-                                    checked={activeShipments.length > 0 && selectedItems.size === activeShipments.length}
+                                    checked={filteredAndSortedShipments.length > 0 && selectedItems.size === filteredAndSortedShipments.length}
                                     onChange={handleSelectAll}
                                     className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                 />
                             </th>
-                            {['Müşteri', 'Nakliye Firması', 'Sevk Tarihi', 'Teslim Tarihi', 'Durum', 'İşlemler'].map(head => (
+                            {['Sipariş No', 'Müşteri', 'Nakliye Firması', 'Sevk Tarihi', 'Durum', 'İşlemler'].map(head => (
                                 <th key={head} className="p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-300">
                                     {head}
                                 </th>
@@ -270,9 +421,10 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {activeShipments.length > 0 ? activeShipments.map(shipment => {
+                        {filteredAndSortedShipments.length > 0 ? filteredAndSortedShipments.map(shipment => {
                             const order = orders.find(o => o.id === shipment.orderId);
                             const customer = customers.find(c => c.id === order?.customerId);
+
                             return (
                             <tr key={shipment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                 <td className="p-3 text-sm">
@@ -283,10 +435,12 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
                                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                     />
                                 </td>
+                                <td className="p-3 text-sm text-blue-600 dark:text-blue-400 font-mono">
+                                    #{order?.id?.slice(-6) || 'N/A'}
+                                </td>
                                 <td className="p-3 text-sm text-gray-700 dark:text-gray-300 font-bold">{customer?.name || 'Bilinmeyen Müşteri'}</td>
                                 <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{shipment.transporter}</td>
                                 <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{formatDate(shipment.shipment_date)}</td>
-                                <td className="p-3 text-sm text-gray-700 dark:text-gray-300">{formatDate(shipment.delivery_date) || '-'}</td>
                                 <td className="p-3 text-sm">
                                     <span
                                         className={`p-1.5 text-xs font-medium uppercase tracking-wider rounded-lg ${getStatusClass(shipment.status)}`}
@@ -340,7 +494,9 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
                         }) : (
                             <tr>
                                 <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-gray-400">
-                                    Henüz sevkiyat eklenmemiş.
+                                    {searchQuery || filters.status !== 'Tümü' || filters.dateRange !== 'Tümü' || filters.customer !== 'Tümü'
+                                        ? 'Arama kriterine uygun sevkiyat bulunamadı.'
+                                        : 'Henüz sevkiyat eklenmemiş.'}
                                 </td>
                             </tr>
                         )}
@@ -379,6 +535,8 @@ const Shipments = ({ shipments, orders = [], products = [], customers = [], onDe
             />
         </div>
     );
-};
+});
+
+Shipments.displayName = 'Shipments';
 
 export default Shipments;

@@ -4,29 +4,7 @@ import FormSelect from '../common/FormSelect';
 import { TrashIcon } from '../icons';
 import { formatCurrency } from '../../utils/formatters';
 
-// Normalize unit values (convert lowercase to capitalized)
-const normalizeUnit = (unit) => {
-    if (!unit) return 'Adet';
-    if (unit.toLowerCase() === 'adet') return 'Adet';
-    if (unit.toLowerCase() === 'kg') return 'Kg';
-    return unit;
-};
-
 const ItemEditor = ({ items, setItems, products }) => {
-    // Normalize units when component receives items
-    React.useEffect(() => {
-        const normalizedItems = items.map(item => ({
-            ...item,
-            unit: normalizeUnit(item.unit)
-        }));
-
-        // Only update if there's a difference
-        const hasChanges = items.some((item, index) => item.unit !== normalizedItems[index].unit);
-        if (hasChanges) {
-            setItems(normalizedItems);
-        }
-    }, []);
-
     const handleAddItem = () => {
         if (products.length > 0) {
             const firstProduct = products[0];
@@ -35,7 +13,7 @@ const ItemEditor = ({ items, setItems, products }) => {
                 {
                     productId: firstProduct.id,
                     quantity: 1,
-                    unit: 'Adet',
+                    unit: 'Kg',
                     unit_price: firstProduct.selling_price
                 }
             ]);
@@ -90,18 +68,12 @@ const ItemEditor = ({ items, setItems, products }) => {
                                 value={item.quantity}
                                 onChange={e => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
                                 min="1"
+                                step="0.01"
                                 placeholder="Miktar"
                             />
                         </div>
-                        <div className="w-28">
-                            <select
-                                value={item.unit || 'Adet'}
-                                onChange={e => handleItemChange(index, 'unit', e.target.value)}
-                                className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                            >
-                                <option value="Adet">Adet</option>
-                                <option value="Kg">Kg</option>
-                            </select>
+                        <div className="w-16 flex items-center justify-center">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Kg</span>
                         </div>
                         <div className="w-36">
                             <FormInput

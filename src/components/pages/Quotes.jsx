@@ -1,18 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
+import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import QuoteForm from '../forms/QuoteForm';
 import SearchBar from '../common/SearchBar';
+import ActionsDropdown from '../common/ActionsDropdown';
 import { PlusIcon } from '../icons';
 import { formatDate, formatCurrency, getStatusClass } from '../../utils/formatters';
 
-const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, products }) => {
+const Quotes = memo(({ quotes, orders = [], shipments = [], onSave, onDelete, onConvertToOrder, customers, products, onGeneratePdf }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentQuote, setCurrentQuote] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, item: null });
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('Tümü');
     const [selectedItems, setSelectedItems] = useState(new Set());
+    const [rejectionReasonModal, setRejectionReasonModal] = useState({ isOpen: false, reason: '' });
 
     const handleOpenModal = (quote = null) => {
         setCurrentQuote(quote);
@@ -74,7 +77,7 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
     const handlePrint = (quote) => {
         const customer = customers.find(c => c.id === quote.customerId);
         if (!customer) {
-            alert('Müşteri bilgileri bulunamadı!');
+            toast.error('Müşteri bilgileri bulunamadı!');
             return;
         }
 
@@ -87,14 +90,16 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
             logoUrl: "https://i.ibb.co/rGFcQ4GB/logo-Photoroom.png"
         };
 
-        const itemsHtml = (quote.items || []).map(item => {
+        const itemsHtml = (quote.items || []).map((item, index) => {
             const product = products.find(p => p.id === item.productId);
+            const isEven = index % 2 === 0;
             return `
-                <tr class="border-b">
-                    <td class="py-2 px-4">${product?.name || item.product_name || 'Bilinmeyen Ürün'}</td>
-                    <td class="py-2 px-4 text-center">${item.quantity || 0} ${item.unit || 'Adet'}</td>
-                    <td class="py-2 px-4 text-right">${formatCurrency(item.unit_price || 0, quote.currency || 'TRY')}</td>
-                    <td class="py-2 px-4 text-right">${formatCurrency((item.quantity || 0) * (item.unit_price || 0), quote.currency || 'TRY')}</td>
+                <tr class="border-b border-gray-200 ${isEven ? 'bg-gray-50' : 'bg-white'}">
+                    <td class="py-2 px-3 text-center text-gray-500 text-xs">${index + 1}</td>
+                    <td class="py-2 px-3 text-sm text-gray-900">${product?.name || item.product_name || 'Bilinmeyen Ürün'}</td>
+                    <td class="py-2 px-3 text-center text-sm text-gray-700">${item.quantity || 0} Kg</td>
+                    <td class="py-2 px-3 text-right text-sm text-gray-700">${formatCurrency(item.unit_price || 0, quote.currency || 'TRY')}</td>
+                    <td class="py-2 px-3 text-right text-sm font-semibold text-gray-900">${formatCurrency((item.quantity || 0) * (item.unit_price || 0), quote.currency || 'TRY')}</td>
                 </tr>
             `;
         }).join('');
@@ -103,49 +108,57 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
             <html>
             <head>
                 <title>Teklif #${quote.id?.substring(0, 8) || 'XXXX'}</title>
-                <script src="https://cdn.tailwindcss.com"><\/script>
+                <script src="https://cdn.tailwindcss.com"></script>
                 <style>
                     @media print {
                         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         .no-print { display: none; }
+                        @page { margin: 1cm; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                        thead { display: table-header-group; }
                     }
                 </style>
             </head>
-            <body class="bg-gray-100 font-sans p-8">
-                <div class="max-w-4xl mx-auto bg-white p-12 shadow-2xl rounded-lg">
-                    <header class="flex justify-between items-start pb-8 border-b">
+            <body class="bg-white p-8">
+                <div class="max-w-4xl mx-auto bg-white">
+                    <div class="p-8">
+                    <header class="flex justify-between items-start pb-6 border-b-2 border-gray-900">
                         <div>
-                            <img src="${companyInfo.logoUrl}" alt="${companyInfo.name} Logosu" class="h-20 mb-4"/>
-                            <h1 class="text-2xl font-bold text-gray-800">${companyInfo.name}</h1>
-                            <p class="text-sm text-gray-500">${companyInfo.address}</p>
-                            <p class="text-sm text-gray-500">${companyInfo.phone} | ${companyInfo.email}</p>
+                            <img src="${companyInfo.logoUrl}" alt="${companyInfo.name} Logosu" class="h-16 mb-3"/>
+                            <h1 class="text-xl font-bold text-gray-900">${companyInfo.name}</h1>
+                            <p class="text-xs text-gray-600 mt-1">${companyInfo.address}</p>
+                            <p class="text-xs text-gray-600">${companyInfo.phone} | ${companyInfo.email}</p>
                         </div>
                         <div class="text-right">
-                            <h2 class="text-4xl font-bold uppercase text-blue-600">Teklif</h2>
-                            <p class="text-sm text-gray-500 mt-2">Teklif No: #${quote.id?.substring(0, 8).toUpperCase() || 'XXXX'}</p>
-                            <p class="text-sm text-gray-500">Tarih: ${formatDate(quote.teklif_tarihi)}</p>
-                            <p class="text-sm text-gray-500">Geçerlilik: ${formatDate(quote.gecerlilik_tarihi)}</p>
+                            <h2 class="text-3xl font-bold text-gray-900 mb-3">TEKLİF</h2>
+                            <div class="text-xs text-gray-600 space-y-1">
+                                <p><span class="font-semibold">No:</span> #${quote.id?.substring(0, 8).toUpperCase() || 'XXXX'}</p>
+                                <p><span class="font-semibold">Tarih:</span> ${formatDate(quote.teklif_tarihi)}</p>
+                                <p><span class="font-semibold">Geçerlilik:</span> ${formatDate(quote.gecerlilik_tarihi)}</p>
+                            </div>
                         </div>
                     </header>
 
-                    <section class="mt-8">
-                        <h3 class="text-lg font-semibold text-gray-700">Müşteri Bilgileri</h3>
-                        <div class="bg-gray-50 p-4 rounded-md mt-2 text-sm">
-                            <p class="font-bold text-gray-800">${customer.name}</p>
-                            <p>${customer.address || ''}, ${customer.sehir || ''}</p>
-                            <p>${customer.phone || ''}</p>
-                            <p>${customer.email || ''}</p>
+                    <section class="mt-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2 uppercase tracking-wide">Müşteri Bilgileri</h3>
+                        <div class="border border-gray-300 p-3 text-xs">
+                            <p class="font-bold text-gray-900">${customer.name}</p>
+                            <p class="text-gray-600">${customer.address || ''}, ${customer.sehir || ''}</p>
+                            <p class="text-gray-600">${customer.phone || ''}</p>
+                            <p class="text-gray-600">${customer.email || ''}</p>
                         </div>
                     </section>
 
-                    <section class="mt-8">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="py-2 px-4 text-left font-semibold text-gray-600">Ürün/Hizmet</th>
-                                    <th class="py-2 px-4 text-center font-semibold text-gray-600">Miktar</th>
-                                    <th class="py-2 px-4 text-right font-semibold text-gray-600">Birim Fiyat</th>
-                                    <th class="py-2 px-4 text-right font-semibold text-gray-600">Toplam</th>
+                    <section class="mt-6">
+                        <table class="w-full border-collapse border border-gray-300">
+                            <thead>
+                                <tr class="bg-gray-900 text-white">
+                                    <th class="py-2 px-3 text-center text-xs font-semibold border-r border-gray-700">#</th>
+                                    <th class="py-2 px-3 text-left text-xs font-semibold border-r border-gray-700">Ürün/Hizmet</th>
+                                    <th class="py-2 px-3 text-center text-xs font-semibold border-r border-gray-700">Miktar</th>
+                                    <th class="py-2 px-3 text-right text-xs font-semibold border-r border-gray-700">Birim Fiyat</th>
+                                    <th class="py-2 px-3 text-right text-xs font-semibold">Toplam</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -154,54 +167,63 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                         </table>
                     </section>
 
-                    <section class="mt-8 flex justify-end">
-                        <div class="w-1/2">
-                            <div class="flex justify-between text-sm py-2 border-b">
-                                <span class="font-semibold text-gray-600">Ara Toplam:</span>
-                                <span>${formatCurrency(quote.subtotal || 0, quote.currency || 'TRY')}</span>
+                    <section class="mt-6 flex justify-end">
+                        <div class="w-80 border border-gray-300">
+                            <div class="flex justify-between text-xs py-1.5 px-3 border-b border-gray-200">
+                                <span class="text-gray-700">Ara Toplam:</span>
+                                <span class="font-semibold text-gray-900">${formatCurrency(quote.subtotal || 0, quote.currency || 'TRY')}</span>
                             </div>
-                            <div class="flex justify-between text-sm py-2 border-b">
-                                <span class="font-semibold text-gray-600">KDV (%${quote.vatRate || 10}):</span>
-                                <span>${formatCurrency(quote.vatAmount || 0, quote.currency || 'TRY')}</span>
+                            <div class="flex justify-between text-xs py-1.5 px-3 border-b border-gray-200">
+                                <span class="text-gray-700">KDV (%${quote.vatRate || 10}):</span>
+                                <span class="font-semibold text-gray-900">${formatCurrency(quote.vatAmount || 0, quote.currency || 'TRY')}</span>
                             </div>
-                            <div class="flex justify-between text-xl font-bold py-3 bg-gray-100 px-4 rounded-md">
-                                <span class="text-gray-800">Genel Toplam:</span>
-                                <span class="text-blue-600">${formatCurrency(quote.total_amount || 0, quote.currency || 'TRY')}</span>
+                            <div class="flex justify-between bg-gray-900 text-white py-2 px-3">
+                                <span class="text-sm font-bold">GENEL TOPLAM</span>
+                                <span class="text-sm font-bold">${formatCurrency(quote.total_amount || 0, quote.currency || 'TRY')}</span>
                             </div>
                         </div>
                     </section>
 
-                    <section class="mt-8 bg-blue-50 p-4 rounded-md">
-                        <h3 class="text-md font-semibold text-gray-700 mb-2">Ödeme Koşulları</h3>
-                        <div class="text-sm text-gray-600">
+                    <section class="mt-6 border border-gray-300 p-3">
+                        <h3 class="text-xs font-semibold text-gray-900 mb-2 uppercase">Ödeme Koşulları</h3>
+                        <div class="text-xs text-gray-600">
                             <p><strong>Ödeme Tipi:</strong> ${quote.paymentType || 'Peşin'}</p>
                             ${quote.paymentType === 'Vadeli' && quote.paymentTerm ? `<p><strong>Vade Süresi:</strong> ${quote.paymentTerm} gün</p>` : ''}
-                            ${quote.paymentType === 'Peşin' ? '<p class="mt-2 text-green-700 font-medium">✓ Peşin ödemede geçerlidir</p>' : ''}
                         </div>
                     </section>
 
-                    <section class="border-t-2 border-gray-300 pt-4">
-                        <div class="grid grid-cols-2 gap-4">
+                    ${quote.notes ? `
+                    <section class="mt-6 border border-gray-300 p-3">
+                        <h3 class="text-xs font-semibold text-gray-900 mb-2 uppercase">Özel Notlar</h3>
+                        <p class="text-xs text-gray-600 whitespace-pre-wrap">${quote.notes}</p>
+                    </section>
+                    ` : ''}
+
+                    <section class="mt-8 border-t border-gray-300 pt-6">
+                        <div class="grid grid-cols-2 gap-8">
                             <div class="text-center">
-                                <div class="h-28 border-b-2 border-gray-400 mb-3"></div>
-                                <p class="text-sm font-semibold text-gray-700">${companyInfo.name}</p>
+                                <div class="h-20 border-b border-gray-400 mb-2"></div>
+                                <p class="text-xs font-semibold text-gray-900">${companyInfo.name}</p>
                                 <p class="text-xs text-gray-500">Yetkili İmza ve Kaşe</p>
                             </div>
                             <div class="text-center">
-                                <div class="h-28 border-b-2 border-gray-400 mb-3"></div>
-                                <p class="text-sm font-semibold text-gray-700">${customer.name}</p>
+                                <div class="h-20 border-b border-gray-400 mb-2"></div>
+                                <p class="text-xs font-semibold text-gray-900">${customer.name}</p>
                                 <p class="text-xs text-gray-500">Müşteri İmza ve Kaşe</p>
                             </div>
                         </div>
                     </section>
 
-                    <footer class="mt-12 pt-6 border-t text-center text-xs text-gray-500">
+                    <footer class="mt-8 pt-4 border-t border-gray-300 text-center text-xs text-gray-500">
                         <p>Teklifimizle ilgilendiğiniz için teşekkür ederiz.</p>
-                        <p>Bu teklif ${formatDate(quote.gecerlilik_tarihi)} tarihine kadar geçerlidir.</p>
+                        <p class="mt-1">Bu teklif ${formatDate(quote.gecerlilik_tarihi)} tarihine kadar geçerlidir.</p>
                     </footer>
+                    </div>
                 </div>
-                <div class="text-center mt-8 no-print">
-                    <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700">Yazdır</button>
+                <div class="text-center mt-6 no-print">
+                    <button onclick="window.print()" class="bg-gray-900 text-white px-6 py-2 hover:bg-gray-800 text-sm font-medium">
+                        Yazdır / PDF Kaydet
+                    </button>
                 </div>
             </body>
             </html>
@@ -303,7 +325,7 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                                 />
                             </th>
                             {['Müşteri', 'Teklif Tarihi', 'Geçerlilik Tarihi', 'Tutar', 'Ödeme', 'Durum', 'İşlemler'].map(h => (
-                                <th key={h} className="p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-200">
+                                <th key={h} className={`p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-200 ${h === 'İşlemler' ? 'text-right' : ''}`}>
                                     {h}
                                 </th>
                             ))}
@@ -311,7 +333,25 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700 md:divide-none">
                         {filteredQuotes.length > 0 ? (
-                            filteredQuotes.map(quote => (
+                            filteredQuotes.map(quote => {
+                                const quoteActions = [
+                                    { label: 'Detay', onClick: () => handleOpenModal(quote) },
+                                    { label: 'PDF', onClick: () => handlePrint(quote) },
+                                    { label: 'Özelleştir', onClick: () => onGeneratePdf(quote) },
+                                ];
+
+                                if (quote.status === 'Hazırlandı') {
+                                    quoteActions.push({ label: 'Siparişe Çevir', onClick: () => onConvertToOrder(quote) });
+                                } else if (quote.orderId) {
+                                    const relatedOrder = orders.find(o => o.id === quote.orderId && !o.isDeleted);
+                                    if (!relatedOrder) {
+                                        quoteActions.push({ label: 'Tekrar Siparişe Çevir', onClick: () => onConvertToOrder(quote) });
+                                    }
+                                }
+
+                                quoteActions.push({ label: 'Sil', onClick: () => handleDelete(quote), destructive: true });
+
+                                return (
                                 <tr
                                     key={quote.id}
                                     className="block md:table-row border-b md:border-none mb-4 md:mb-0 rounded-lg md:rounded-none shadow md:shadow-none hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -361,50 +401,26 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                                         <span className="float-left font-semibold text-gray-500 dark:text-gray-400 md:hidden uppercase tracking-wider text-xs">
                                             Durum:{' '}
                                         </span>
-                                        <span
-                                            className={`p-1.5 text-xs font-medium uppercase tracking-wider rounded-lg ${getStatusClass(quote.status)}`}
-                                        >
+                                        <button
+                                            onClick={() => {
+                                                if (quote.status === 'Reddedildi') {
+                                                    setRejectionReasonModal({ isOpen: true, reason: quote.rejection_reason });
+                                                }
+                                            }}
+                                            className={`p-1.5 text-xs font-medium uppercase tracking-wider rounded-lg ${getStatusClass(quote.status)} ${quote.status === 'Reddedildi' ? 'cursor-pointer' : ''}`}>
                                             {quote.status}
-                                        </span>
+                                        </button>
                                     </td>
-                                    <td className="p-3 text-sm block md:table-cell text-right md:text-left border-b md:border-none">
-                                        <span className="float-left font-semibold text-gray-500 dark:text-gray-400 md:hidden uppercase tracking-wider text-xs">
-                                            İşlemler:{' '}
-                                        </span>
-                                        <div className="flex flex-wrap gap-2 justify-end md:justify-start">
-                                            <button
-                                                onClick={() => handleOpenModal(quote)}
-                                                className="text-blue-500 hover:underline"
-                                            >
-                                                Detay
-                                            </button>
-                                            <button
-                                                onClick={() => handlePrint(quote)}
-                                                className="text-purple-500 hover:underline"
-                                            >
-                                                PDF
-                                            </button>
-                                            {quote.status !== 'Onaylandı' && (
-                                                <button
-                                                    onClick={() => onConvertToOrder(quote)}
-                                                    className="text-green-500 hover:underline"
-                                                >
-                                                    Siparişe Çevir
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={() => handleDelete(quote)}
-                                                className="text-red-500 hover:underline"
-                                            >
-                                                Sil
-                                            </button>
+                                    <td className="p-3 text-sm block md:table-cell text-right">
+                                        <div className="flex justify-end">
+                                            <ActionsDropdown actions={quoteActions} />
                                         </div>
                                     </td>
                                 </tr>
-                            ))
+                            )}) 
                         ) : (
                             <tr>
-                                <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                <td colSpan="8" className="p-8 text-center text-gray-500 dark:text-gray-400">
                                     {searchQuery || statusFilter !== 'Tümü'
                                         ? 'Arama kriterlerine uygun teklif bulunamadı.'
                                         : 'Henüz teklif eklenmemiş. "Yeni Teklif" butonuna tıklayarak ilk teklifinizi oluşturun.'}
@@ -426,6 +442,8 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                     onCancel={() => setIsModalOpen(false)}
                     customers={customers}
                     products={products}
+                    orders={orders}
+                    shipments={shipments}
                 />
             </Modal>
 
@@ -440,8 +458,28 @@ const Quotes = ({ quotes, onSave, onDelete, onConvertToOrder, customers, product
                         : `"${deleteConfirm.item?.id}" teklifini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`
                 }
             />
+
+            <Modal
+                show={rejectionReasonModal.isOpen}
+                onClose={() => setRejectionReasonModal({ isOpen: false, reason: '' })}
+                title="Reddedilme Nedeni"
+            >
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                    {rejectionReasonModal.reason}
+                </p>
+                <div className="flex justify-end mt-4">
+                    <button
+                        onClick={() => setRejectionReasonModal({ isOpen: false, reason: '' })}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                        Kapat
+                    </button>
+                </div>
+            </Modal>
         </div>
     );
-};
+});
+
+Quotes.displayName = 'Quotes';
 
 export default Quotes;

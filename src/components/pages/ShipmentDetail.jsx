@@ -1,0 +1,62 @@
+import React from 'react';
+import { formatDate } from '../../utils/formatters';
+
+const ShipmentDetail = ({ shipment, order, customer }) => {
+    if (!shipment) return null;
+
+    return (
+        <div className="space-y-6 p-4">
+            {/* Shipment Info */}
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg shadow-sm">
+                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Sevkiyat Bilgileri</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <p className="text-gray-500 dark:text-gray-400">Müşteri</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{customer?.name || 'Bilinmiyor'}</p>
+                    </div>
+                    <div>
+                        <p className="text-gray-500 dark:text-gray-400">Sipariş Tarihi</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{order ? formatDate(order.order_date) : 'Bilinmiyor'}</p>
+                    </div>
+                    <div>
+                        <p className="text-gray-500 dark:text-gray-400">Sevk Tarihi</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{formatDate(shipment.shipment_date)}</p>
+                    </div>
+                    <div>
+                        <p className="text-gray-500 dark:text-gray-400">Nakliye Firması</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{shipment.transporter}</p>
+                    </div>
+                    <div className="col-span-full">
+                        <p className="text-gray-500 dark:text-gray-400">Notlar</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{shipment.notes || '-'}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Shipped Items */}
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg shadow-sm">
+                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Sevk Edilen Ürünler</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-100 dark:bg-gray-700">
+                            <tr>
+                                <th className="px-4 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Ürün Adı</th>
+                                <th className="px-4 py-2 text-right font-semibold text-gray-700 dark:text-gray-300">Miktar</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                            {shipment.items && shipment.items.map((item, index) => (
+                                <tr key={index}>
+                                    <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{item.productName}</td>
+                                    <td className="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{item.quantity} {item.unit || 'adet'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ShipmentDetail;

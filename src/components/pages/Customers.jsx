@@ -1,15 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import Modal from '../common/Modal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import CustomerForm from '../forms/CustomerForm';
 import CustomerDetail from './CustomerDetail';
 import QuoteForm from '../forms/QuoteForm';
 import OrderForm from '../forms/OrderForm';
+import ShipmentDetail from './ShipmentDetail';
 import SearchBar from '../common/SearchBar';
+import ActionsDropdown from '../common/ActionsDropdown';
 import { PlusIcon, WhatsAppIcon } from '../icons';
 import { getStatusClass, formatPhoneNumberForWhatsApp } from '../../utils/formatters';
 
-const Customers = ({
+const Customers = memo(({
     customers,
     onSave,
     onDelete,
@@ -19,19 +21,22 @@ const Customers = ({
     shipments = [],
     products = [],
     onQuoteSave,
-    onOrderSave
+    onOrderSave,
+    onShipmentUpdate
 }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-    const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
-    const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+
     const [isQuoteViewModalOpen, setIsQuoteViewModalOpen] = useState(false);
     const [isOrderViewModalOpen, setIsOrderViewModalOpen] = useState(false);
     const [currentCustomer, setCurrentCustomer] = useState(null);
     const [currentQuote, setCurrentQuote] = useState(null);
     const [currentOrder, setCurrentOrder] = useState(null);
+    const [currentShipment, setCurrentShipment] = useState(null);
+    const [isShipmentViewModalOpen, setIsShipmentViewModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('Tümü');
+    const [cityFilter, setCityFilter] = useState('Tümü');
     const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, customer: null });
     const [selectedItems, setSelectedItems] = useState(new Set());
 
@@ -55,42 +60,14 @@ const Customers = ({
         handleDelete(currentCustomer);
     };
 
-    const handleCreateQuoteFromDetail = () => {
-        setIsDetailModalOpen(false);
-        setIsQuoteModalOpen(true);
-    };
 
-    const handleCreateOrderFromDetail = () => {
-        setIsDetailModalOpen(false);
-        setIsOrderModalOpen(true);
-    };
 
     const handleSave = (customerData) => {
         onSave(customerData);
         setIsModalOpen(false);
     };
 
-    const handleQuoteSave = (quoteData) => {
-        // Ensure customer is set
-        const finalQuoteData = {
-            ...quoteData,
-            customerId: currentCustomer.id
-        };
-        onQuoteSave(finalQuoteData);
-        setIsQuoteModalOpen(false);
-        setIsDetailModalOpen(true); // Return to detail view
-    };
 
-    const handleOrderSave = (orderData) => {
-        // Ensure customer is set
-        const finalOrderData = {
-            ...orderData,
-            customerId: currentCustomer.id
-        };
-        onOrderSave(finalOrderData);
-        setIsOrderModalOpen(false);
-        setIsDetailModalOpen(true); // Return to detail view
-    };
 
     const handleViewOrder = (order) => {
         setCurrentOrder(order);
@@ -111,6 +88,17 @@ const Customers = ({
 
     const handleCloseQuoteView = () => {
         setIsQuoteViewModalOpen(false);
+        setIsDetailModalOpen(true);
+    };
+
+    const handleViewShipment = (shipment) => {
+        setCurrentShipment(shipment);
+        setIsDetailModalOpen(false);
+        setIsShipmentViewModalOpen(true);
+    };
+
+    const handleCloseShipmentView = () => {
+        setIsShipmentViewModalOpen(false);
         setIsDetailModalOpen(true);
     };
 
@@ -164,8 +152,6 @@ const Customers = ({
     // Determine customer status based on activity
     const getCustomerStatus = (customerId) => {
         const hasActivity = orders.some(o => o.customerId === customerId && !o.isDeleted) ||
-                            quotes.some(q => q.customerId === customerId && !q.isDeleted) ||
-                            meetings.some(m => m.customerId === customerId && !m.isDeleted) ||
                             shipments.some(s => {
                                 const order = orders.find(o => o.id === s.orderId);
                                 return order && order.customerId === customerId && !order.isDeleted;
@@ -174,6 +160,7 @@ const Customers = ({
     };
 
     const customerStatuses = ['Tümü', 'Aktif Müşteri', 'Potansiyel Müşteri'];
+    const cities = ['Tümü', ...new Set(customers.map(c => c.city).filter(Boolean))];
 
     // Filter customers based on search query, status, and exclude deleted ones
     const filteredCustomers = useMemo(() => {
@@ -190,10 +177,11 @@ const Customers = ({
                 customer.email?.toLowerCase().includes(query);
 
             const matchesStatus = statusFilter === 'Tümü' || status === statusFilter;
+            const matchesCity = cityFilter === 'Tümü' || customer.city === cityFilter;
 
-            return matchesSearch && matchesStatus;
+            return matchesSearch && matchesStatus && matchesCity;
         });
-    }, [customers, searchQuery, statusFilter, orders, quotes, meetings, shipments]);
+    }, [customers, searchQuery, statusFilter, cityFilter, orders, quotes, meetings, shipments, getCustomerStatus]);
 
     return (
         <div>
@@ -222,7 +210,7 @@ const Customers = ({
             </div>
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-3">
+                <div className="md:col-span-2">
                     <SearchBar
                         placeholder="Müşteri ara (ad, yetkili, telefon, e-posta)..."
                         value={searchQuery}
@@ -237,6 +225,17 @@ const Customers = ({
                     >
                         {customerStatuses.map(status => (
                             <option key={status} value={status}>{status}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <select
+                        value={cityFilter}
+                        onChange={(e) => setCityFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        {cities.map(city => (
+                            <option key={city} value={city}>{city}</option>
                         ))}
                     </select>
                 </div>
@@ -259,8 +258,8 @@ const Customers = ({
                                     className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                 />
                             </th>
-                            {['Müşteri Adı', 'Yetkili Kişi', 'Telefon', 'E-posta', 'Durum', 'İşlemler'].map(head => (
-                                <th key={head} className="p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-300">
+                            {['Müşteri Adı', 'Yetkili Kişi', 'Telefon', 'Şehir', 'Durum', 'İşlemler'].map(head => (
+                                <th key={head} className={`p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-300 ${head === 'İşlemler' ? 'text-right' : ''}`}>
                                     {head}
                                 </th>
                             ))}
@@ -270,6 +269,11 @@ const Customers = ({
                         {filteredCustomers.length > 0 ? (
                             filteredCustomers.map(customer => {
                                 const status = getCustomerStatus(customer.id);
+                                const customerActions = [
+                                    { label: 'Düzenle', onClick: () => handleOpenModal(customer) },
+                                    { label: 'Sil', onClick: () => handleDelete(customer), destructive: true },
+                                ];
+
                                 return (
                                     <tr
                                         key={customer.id}
@@ -321,9 +325,9 @@ const Customers = ({
                                         </td>
                                         <td className="p-3 text-sm text-gray-700 dark:text-gray-300 block md:table-cell text-right md:text-left border-b md:border-none">
                                             <span className="float-left font-semibold text-gray-500 dark:text-gray-400 md:hidden uppercase tracking-wider text-xs">
-                                                E-posta:{' '}
+                                                Şehir:{' '}
                                             </span>
-                                            {customer.email}
+                                            {customer.city}
                                         </td>
                                         <td className="p-3 text-sm block md:table-cell text-right md:text-left border-b md:border-none">
                                             <span className="float-left font-semibold text-gray-500 dark:text-gray-400 md:hidden uppercase tracking-wider text-xs">
@@ -334,22 +338,8 @@ const Customers = ({
                                             </span>
                                         </td>
                                         <td className="p-3 text-sm block md:table-cell text-right md:text-left border-b md:border-none">
-                                            <span className="float-left font-semibold text-gray-500 dark:text-gray-400 md:hidden uppercase tracking-wider text-xs">
-                                                İşlemler:{' '}
-                                            </span>
-                                            <div className="flex flex-wrap gap-2 justify-end md:justify-start">
-                                                <button
-                                                    onClick={() => handleOpenModal(customer)}
-                                                    className="text-blue-500 hover:underline"
-                                                >
-                                                    Düzenle
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(customer)}
-                                                    className="text-red-500 hover:underline"
-                                                >
-                                                    Sil
-                                                </button>
+                                            <div className="flex justify-end">
+                                                <ActionsDropdown actions={customerActions} />
                                             </div>
                                         </td>
                                     </tr>
@@ -357,8 +347,8 @@ const Customers = ({
                             })
                         ) : (
                             <tr>
-                                <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-gray-400">
-                                    {searchQuery || statusFilter !== 'Tümü'
+                                <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                    {searchQuery || statusFilter !== 'Tümü' || cityFilter !== 'Tümü'
                                         ? 'Arama kriterlerine uygun müşteri bulunamadı.'
                                         : 'Henüz müşteri eklenmemiş.'}
                                 </td>
@@ -395,62 +385,23 @@ const Customers = ({
                         onEdit={handleEditFromDetail}
                         onDelete={handleDeleteFromDetail}
                         onClose={() => setIsDetailModalOpen(false)}
-                        onCreateQuote={handleCreateQuoteFromDetail}
-                        onCreateOrder={handleCreateOrderFromDetail}
+                        onQuoteSave={onQuoteSave}
+                        onOrderSave={onOrderSave}
+                        products={products}
                         onViewOrder={handleViewOrder}
                         onViewQuote={handleViewQuote}
+                        onViewShipment={handleViewShipment}
                     />
                 )}
             </Modal>
 
-            <Modal
-                show={isQuoteModalOpen}
-                onClose={() => {
-                    setIsQuoteModalOpen(false);
-                    setIsDetailModalOpen(true);
-                }}
-                title="Yeni Teklif Oluştur"
-            >
-                {currentCustomer && (
-                    <QuoteForm
-                        quote={{ customerId: currentCustomer.id }}
-                        onSave={handleQuoteSave}
-                        onCancel={() => {
-                            setIsQuoteModalOpen(false);
-                            setIsDetailModalOpen(true);
-                        }}
-                        customers={customers}
-                        products={products}
-                    />
-                )}
-            </Modal>
 
-            <Modal
-                show={isOrderModalOpen}
-                onClose={() => {
-                    setIsOrderModalOpen(false);
-                    setIsDetailModalOpen(true);
-                }}
-                title="Yeni Sipariş Oluştur"
-            >
-                {currentCustomer && (
-                    <OrderForm
-                        order={{ customerId: currentCustomer.id }}
-                        onSave={handleOrderSave}
-                        onCancel={() => {
-                            setIsOrderModalOpen(false);
-                            setIsDetailModalOpen(true);
-                        }}
-                        customers={customers}
-                        products={products}
-                    />
-                )}
-            </Modal>
 
             <Modal
                 show={isOrderViewModalOpen}
                 onClose={handleCloseOrderView}
                 title="Sipariş Detayı"
+                maxWidth="max-w-4xl"
             >
                 {currentOrder && (
                     <OrderForm
@@ -470,6 +421,7 @@ const Customers = ({
                 show={isQuoteViewModalOpen}
                 onClose={handleCloseQuoteView}
                 title="Teklif Detayı"
+                maxWidth="max-w-4xl"
             >
                 {currentQuote && (
                     <QuoteForm
@@ -485,6 +437,25 @@ const Customers = ({
                 )}
             </Modal>
 
+            <Modal
+                show={isShipmentViewModalOpen}
+                onClose={handleCloseShipmentView}
+                title="Sevkiyat Detayı"
+                maxWidth="max-w-lg"
+            >
+                {currentShipment && (() => {
+                    const order = orders.find(o => o.id === currentShipment.orderId);
+                    const customer = customers.find(c => c.id === order?.customerId);
+                    return (
+                        <ShipmentDetail
+                            shipment={currentShipment}
+                            order={order}
+                            customer={customer}
+                        />
+                    );
+                })()}
+            </Modal>
+
             <ConfirmDialog
                 isOpen={deleteConfirm.isOpen}
                 onClose={() => setDeleteConfirm({ isOpen: false, customer: null })}
@@ -498,6 +469,8 @@ const Customers = ({
             />
         </div>
     );
-};
+});
+
+Customers.displayName = 'Customers';
 
 export default Customers;

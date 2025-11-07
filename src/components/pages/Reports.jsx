@@ -1,19 +1,23 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, memo } from 'react';
 import SalesChart from '../charts/SalesChart';
 import OrderStatusChart from '../charts/OrderStatusChart';
 import CustomerAnalyticsChart from '../charts/CustomerAnalyticsChart';
+import EnhancedDailyReportWithDetails from '../reports/EnhancedDailyReportWithDetails';
+import Modal from '../common/Modal';
 import { formatCurrency } from '../../utils/formatters';
+import { CalendarIcon, ChartBarIcon } from '../icons';
 
-const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
+const Reports = memo(({ orders, customers, teklifler, gorusmeler, shipments, products }) => {
     const [dateRange, setDateRange] = useState('30'); // days
+    const [showDailyReportModal, setShowDailyReportModal] = useState(false);
 
-    // Calculate sales trend data
     const salesTrendData = useMemo(() => {
         const now = new Date();
         const daysAgo = parseInt(dateRange);
         const startDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
 
         const filteredOrders = orders.filter(order => {
+            if (order.isDeleted) return false;
             const orderDate = new Date(order.order_date);
             return orderDate >= startDate;
         });
@@ -28,20 +32,19 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
             salesByDate[date] += order.total_amount || 0;
         });
 
-        // Convert to array and sort
+        // Convert to array and sort by actual date
         return Object.entries(salesByDate)
+            .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+            .slice(-15) // Last 15 data points
             .map(([date, sales]) => ({
                 date: new Date(date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' }),
                 sales: Math.round(sales)
-            }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date))
-            .slice(-15); // Last 15 data points
+            }));
     }, [orders, dateRange]);
 
-    // Calculate order status data
     const orderStatusData = useMemo(() => {
         const statusCounts = {};
-        orders.forEach(order => {
+        orders.filter(order => !order.isDeleted).forEach(order => {
             const status = order.status || 'Bilinmiyor';
             statusCounts[status] = (statusCounts[status] || 0) + 1;
         });
@@ -52,11 +55,10 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
         }));
     }, [orders]);
 
-    // Calculate customer analytics
     const customerAnalytics = useMemo(() => {
         const customerStats = {};
 
-        orders.forEach(order => {
+        orders.filter(order => !order.isDeleted).forEach(order => {
             const customerId = order.customerId;
             if (!customerStats[customerId]) {
                 customerStats[customerId] = {
@@ -71,7 +73,7 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
         // Get top 10 customers
         return Object.entries(customerStats)
             .map(([customerId, stats]) => {
-                const customer = customers.find(c => c.id === customerId);
+                const customer = customers.find(c => c.id === customerId && !c.isDeleted);
                 return {
                     name: customer?.name || 'Bilinmiyor',
                     total: Math.round(stats.total),
@@ -82,40 +84,54 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
             .slice(0, 10);
     }, [orders, customers]);
 
-    // Calculate summary statistics
     const stats = useMemo(() => {
-        const totalRevenue = orders.reduce((sum, order) => sum + (order.total_amount || 0), 0);
-        const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
-        const totalCustomers = customers.length;
-        const activeCustomers = new Set(orders.map(o => o.customerId)).size;
-        const conversionRate = teklifler.length > 0
-            ? (teklifler.filter(t => t.status === 'Onaylandı').length / teklifler.length) * 100
+        const activeOrders = orders.filter(o => !o.isDeleted);
+        const activeCustomers = customers.filter(c => !c.isDeleted);
+        const activeTeklifler = teklifler.filter(t => !t.isDeleted);
+        const activeGorusmeler = gorusmeler.filter(g => !g.isDeleted);
+
+        const totalRevenue = activeOrders.reduce((sum, order) => sum + (order.total_amount || 0), 0);
+        const avgOrderValue = activeOrders.length > 0 ? totalRevenue / activeOrders.length : 0;
+        const totalCustomers = activeCustomers.length;
+        const customersWithOrders = new Set(activeOrders.map(o => o.customerId)).size;
+        const conversionRate = activeTeklifler.length > 0
+            ? (activeTeklifler.filter(t => t.status === 'Onaylandı').length / activeTeklifler.length) * 100
             : 0;
 
         return {
             totalRevenue,
             avgOrderValue,
             totalCustomers,
-            activeCustomers,
+            activeCustomers: customersWithOrders,
             conversionRate,
-            totalOrders: orders.length,
-            totalQuotes: teklifler.length,
-            totalMeetings: gorusmeler.length
+            totalOrders: activeOrders.length,
+            totalQuotes: activeTeklifler.length,
+            totalMeetings: activeGorusmeler.length
         };
     }, [orders, customers, teklifler, gorusmeler]);
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Raporlar ve Analizler</h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">İşletmenizin detaylı performans raporları</p>
+                    <p className="text-gray-600 dark:text-gray-400 mt-1">İşletmenizin performansını ve günlük aktivitelerinizi izleyin.</p>
                 </div>
-                <div>
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Günlük Performans Raporu Butonu */}
+                    <button
+                        onClick={() => setShowDailyReportModal(true)}
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                    >
+                        <CalendarIcon className="w-5 h-5" />
+                        <span>Günlük Performans Raporu</span>
+                    </button>
+
+                    {/* Tarih Aralığı Seçici */}
                     <select
                         value={dateRange}
                         onChange={(e) => setDateRange(e.target.value)}
-                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm hover:shadow-md transition-shadow"
                     >
                         <option value="7">Son 7 Gün</option>
                         <option value="30">Son 30 Gün</option>
@@ -125,7 +141,52 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
                 </div>
             </div>
 
+            {/* Modal: Günlük Performans Raporu */}
+            <Modal
+                show={showDailyReportModal}
+                onClose={() => setShowDailyReportModal(false)}
+                title=""
+                maxWidth="max-w-7xl"
+            >
+                <EnhancedDailyReportWithDetails
+                    orders={orders}
+                    quotes={teklifler}
+                    meetings={gorusmeler}
+                    shipments={shipments}
+                    customers={customers}
+                    products={products}
+                />
+            </Modal>
+
+            {/* Quick Access Card for Daily Report */}
+            <div
+                onClick={() => setShowDailyReportModal(true)}
+                className="mb-8 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 p-8 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:scale-[1.02] group"
+            >
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-6">
+                        <div className="bg-white/20 backdrop-blur-sm p-4 rounded-full group-hover:scale-110 transition-transform duration-300">
+                            <ChartBarIcon className="w-12 h-12 text-white" />
+                        </div>
+                        <div className="text-white">
+                            <h3 className="text-2xl font-bold mb-2">Günlük Performans Raporu</h3>
+                            <p className="text-white/90 text-sm md:text-base">
+                                Bugünün detaylı satış, teklif ve operasyon metriklerini görüntüleyin.
+                                Önceki günlerle karşılaştırın ve performansınızı takip edin.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-white font-semibold bg-white/20 backdrop-blur-sm px-6 py-3 rounded-lg group-hover:bg-white/30 transition-colors whitespace-nowrap">
+                        <span>Raporu Görüntüle</span>
+                        <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
             {/* Summary Cards */}
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4 mt-8">Genel Bakış</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg shadow-lg text-white">
                     <h3 className="text-sm font-medium opacity-90">Toplam Gelir</h3>
@@ -194,13 +255,19 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
                         <div className="flex justify-between items-center">
                             <span className="text-gray-600 dark:text-gray-400">Onaylanan</span>
                             <span className="font-semibold text-green-600">
-                                {teklifler.filter(t => t.status === 'Onaylandı').length}
+                                {teklifler.filter(t => !t.isDeleted && t.status === 'Onaylandı').length}
                             </span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-gray-600 dark:text-gray-400">Bekleyen</span>
                             <span className="font-semibold text-yellow-600">
-                                {teklifler.filter(t => t.status !== 'Onaylandı').length}
+                                {teklifler.filter(t => !t.isDeleted && t.status === 'Hazırlandı').length}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-gray-600 dark:text-gray-400">Reddedilen</span>
+                            <span className="font-semibold text-red-600">
+                                {teklifler.filter(t => !t.isDeleted && t.status === 'Reddedildi').length}
                             </span>
                         </div>
                     </div>
@@ -220,13 +287,19 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
                         <div className="flex justify-between items-center">
                             <span className="text-gray-600 dark:text-gray-400">İlgileniyor</span>
                             <span className="font-semibold text-blue-600">
-                                {gorusmeler.filter(g => g.outcome === 'İlgileniyor').length}
+                                {gorusmeler.filter(g => !g.isDeleted && g.outcome === 'İlgileniyor').length}
                             </span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-gray-600 dark:text-gray-400">Teklif Bekliyor</span>
                             <span className="font-semibold text-purple-600">
-                                {gorusmeler.filter(g => g.outcome === 'Teklif Bekliyor').length}
+                                {gorusmeler.filter(g => !g.isDeleted && g.outcome === 'Teklif Bekliyor').length}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-gray-600 dark:text-gray-400">İlgilenmiyor</span>
+                            <span className="font-semibold text-gray-600">
+                                {gorusmeler.filter(g => !g.isDeleted && g.outcome === 'İlgilenmiyor').length}
                             </span>
                         </div>
                     </div>
@@ -234,6 +307,8 @@ const Reports = ({ orders, customers, teklifler, gorusmeler }) => {
             </div>
         </div>
     );
-};
+});
+
+Reports.displayName = 'Reports';
 
 export default Reports;

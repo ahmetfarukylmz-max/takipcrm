@@ -1,14 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
+import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import OrderForm from '../forms/OrderForm';
+import OrderDetail from './OrderDetail';
 import ShipmentForm from '../forms/ShipmentForm';
 import SearchBar from '../common/SearchBar';
+import ActionsDropdown from '../common/ActionsDropdown';
 import { PlusIcon } from '../icons';
 import { formatDate, formatCurrency, getStatusClass } from '../../utils/formatters';
 
-const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) => {
+const Orders = memo(({ orders, onSave, onDelete, onShipment, customers, products, onGeneratePdf }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [currentOrder, setCurrentOrder] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('Tümü');
@@ -20,6 +24,13 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
     const handleOpenModal = (order = null) => {
         setCurrentOrder(order);
         setIsModalOpen(true);
+        setIsDetailModalOpen(false);
+    };
+
+    const handleOpenDetailModal = (order) => {
+        setCurrentOrder(order);
+        setIsDetailModalOpen(true);
+        setIsModalOpen(false);
     };
 
     const handleSave = (orderData) => {
@@ -89,7 +100,7 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
     const handlePrint = (order) => {
         const customer = customers.find(c => c.id === order.customerId);
         if (!customer) {
-            alert('Müşteri bilgileri bulunamadı!');
+            toast.error('Müşteri bilgileri bulunamadı!');
             return;
         }
 
@@ -102,14 +113,16 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
             logoUrl: "https://i.ibb.co/rGFcQ4GB/logo-Photoroom.png"
         };
 
-        const itemsHtml = (order.items || []).map(item => {
+        const itemsHtml = (order.items || []).map((item, index) => {
             const product = products.find(p => p.id === item.productId);
+            const isEven = index % 2 === 0;
             return `
-                <tr class="border-b">
-                    <td class="py-2 px-4">${product?.name || item.product_name || 'Bilinmeyen Ürün'}</td>
-                    <td class="py-2 px-4 text-center">${item.quantity || 0} ${item.unit || 'Adet'}</td>
-                    <td class="py-2 px-4 text-right">${formatCurrency(item.unit_price || 0, order.currency || 'TRY')}</td>
-                    <td class="py-2 px-4 text-right">${formatCurrency((item.quantity || 0) * (item.unit_price || 0), order.currency || 'TRY')}</td>
+                <tr class="border-b border-gray-200 ${isEven ? 'bg-gray-50' : 'bg-white'}">
+                    <td class="py-2 px-3 text-center text-gray-500 text-xs">${index + 1}</td>
+                    <td class="py-2 px-3 text-sm text-gray-900">${product?.name || item.product_name || 'Bilinmeyen Ürün'}</td>
+                    <td class="py-2 px-3 text-center text-sm text-gray-700">${item.quantity || 0} Kg</td>
+                    <td class="py-2 px-3 text-right text-sm text-gray-700">${formatCurrency(item.unit_price || 0, order.currency || 'TRY')}</td>
+                    <td class="py-2 px-3 text-right text-sm font-semibold text-gray-900">${formatCurrency((item.quantity || 0) * (item.unit_price || 0), order.currency || 'TRY')}</td>
                 </tr>
             `;
         }).join('');
@@ -118,49 +131,57 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
             <html>
             <head>
                 <title>Sipariş #${order.id?.substring(0, 8) || 'XXXX'}</title>
-                <script src="https://cdn.tailwindcss.com"><\/script>
+                <script src="https://cdn.tailwindcss.com"></script>
                 <style>
                     @media print {
                         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         .no-print { display: none; }
+                        @page { margin: 1cm; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                        thead { display: table-header-group; }
                     }
                 </style>
             </head>
-            <body class="bg-gray-100 font-sans p-8">
-                <div class="max-w-4xl mx-auto bg-white p-12 shadow-2xl rounded-lg">
-                    <header class="flex justify-between items-start pb-8 border-b">
+            <body class="bg-white p-8">
+                <div class="max-w-4xl mx-auto bg-white">
+                    <div class="p-8">
+                    <header class="flex justify-between items-start pb-6 border-b-2 border-gray-900">
                         <div>
-                            <img src="${companyInfo.logoUrl}" alt="${companyInfo.name} Logosu" class="h-20 mb-4"/>
-                            <h1 class="text-2xl font-bold text-gray-800">${companyInfo.name}</h1>
-                            <p class="text-sm text-gray-500">${companyInfo.address}</p>
-                            <p class="text-sm text-gray-500">${companyInfo.phone} | ${companyInfo.email}</p>
+                            <img src="${companyInfo.logoUrl}" alt="${companyInfo.name} Logosu" class="h-16 mb-3"/>
+                            <h1 class="text-xl font-bold text-gray-900">${companyInfo.name}</h1>
+                            <p class="text-xs text-gray-600 mt-1">${companyInfo.address}</p>
+                            <p class="text-xs text-gray-600">${companyInfo.phone} | ${companyInfo.email}</p>
                         </div>
                         <div class="text-right">
-                            <h2 class="text-4xl font-bold uppercase text-green-600">Sipariş</h2>
-                            <p class="text-sm text-gray-500 mt-2">Sipariş No: #${order.id?.substring(0, 8).toUpperCase() || 'XXXX'}</p>
-                            <p class="text-sm text-gray-500">Sipariş Tarihi: ${formatDate(order.order_date)}</p>
-                            <p class="text-sm text-gray-500">Teslim Tarihi: ${formatDate(order.delivery_date)}</p>
+                            <h2 class="text-3xl font-bold text-gray-900 mb-3">SİPARİŞ</h2>
+                            <div class="text-xs text-gray-600 space-y-1">
+                                <p><span class="font-semibold">No:</span> #${order.id?.substring(0, 8).toUpperCase() || 'XXXX'}</p>
+                                <p><span class="font-semibold">Sipariş Tarihi:</span> ${formatDate(order.order_date)}</p>
+                                <p><span class="font-semibold">Teslim Tarihi:</span> ${formatDate(order.delivery_date)}</p>
+                            </div>
                         </div>
                     </header>
 
-                    <section class="mt-8">
-                        <h3 class="text-lg font-semibold text-gray-700">Müşteri Bilgileri</h3>
-                        <div class="bg-gray-50 p-4 rounded-md mt-2 text-sm">
-                            <p class="font-bold text-gray-800">${customer.name}</p>
-                            <p>${customer.address || ''}, ${customer.sehir || ''}</p>
-                            <p>${customer.phone || ''}</p>
-                            <p>${customer.email || ''}</p>
+                    <section class="mt-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2 uppercase tracking-wide">Müşteri Bilgileri</h3>
+                        <div class="border border-gray-300 p-3 text-xs">
+                            <p class="font-bold text-gray-900">${customer.name}</p>
+                            <p class="text-gray-600">${customer.address || ''}, ${customer.sehir || ''}</p>
+                            <p class="text-gray-600">${customer.phone || ''}</p>
+                            <p class="text-gray-600">${customer.email || ''}</p>
                         </div>
                     </section>
 
-                    <section class="mt-8">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="py-2 px-4 text-left font-semibold text-gray-600">Ürün/Hizmet</th>
-                                    <th class="py-2 px-4 text-center font-semibold text-gray-600">Miktar</th>
-                                    <th class="py-2 px-4 text-right font-semibold text-gray-600">Birim Fiyat</th>
-                                    <th class="py-2 px-4 text-right font-semibold text-gray-600">Toplam</th>
+                    <section class="mt-6">
+                        <table class="w-full border-collapse border border-gray-300">
+                            <thead>
+                                <tr class="bg-gray-900 text-white">
+                                    <th class="py-2 px-3 text-center text-xs font-semibold border-r border-gray-700">#</th>
+                                    <th class="py-2 px-3 text-left text-xs font-semibold border-r border-gray-700">Ürün/Hizmet</th>
+                                    <th class="py-2 px-3 text-center text-xs font-semibold border-r border-gray-700">Miktar</th>
+                                    <th class="py-2 px-3 text-right text-xs font-semibold border-r border-gray-700">Birim Fiyat</th>
+                                    <th class="py-2 px-3 text-right text-xs font-semibold">Toplam</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -169,54 +190,63 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
                         </table>
                     </section>
 
-                    <section class="mt-8 flex justify-end">
-                        <div class="w-1/2">
-                            <div class="flex justify-between text-sm py-2 border-b">
-                                <span class="font-semibold text-gray-600">Ara Toplam:</span>
-                                <span>${formatCurrency(order.subtotal || 0, order.currency || 'TRY')}</span>
+                    <section class="mt-6 flex justify-end">
+                        <div class="w-80 border border-gray-300">
+                            <div class="flex justify-between text-xs py-1.5 px-3 border-b border-gray-200">
+                                <span class="text-gray-700">Ara Toplam:</span>
+                                <span class="font-semibold text-gray-900">${formatCurrency(order.subtotal || 0, order.currency || 'TRY')}</span>
                             </div>
-                            <div class="flex justify-between text-sm py-2 border-b">
-                                <span class="font-semibold text-gray-600">KDV (%${order.vatRate || 10}):</span>
-                                <span>${formatCurrency(order.vatAmount || 0, order.currency || 'TRY')}</span>
+                            <div class="flex justify-between text-xs py-1.5 px-3 border-b border-gray-200">
+                                <span class="text-gray-700">KDV (%${order.vatRate || 10}):</span>
+                                <span class="font-semibold text-gray-900">${formatCurrency(order.vatAmount || 0, order.currency || 'TRY')}</span>
                             </div>
-                            <div class="flex justify-between text-xl font-bold py-3 bg-gray-100 px-4 rounded-md">
-                                <span class="text-gray-800">Genel Toplam:</span>
-                                <span class="text-green-600">${formatCurrency(order.total_amount || 0, order.currency || 'TRY')}</span>
+                            <div class="flex justify-between bg-gray-900 text-white py-2 px-3">
+                                <span class="text-sm font-bold">GENEL TOPLAM</span>
+                                <span class="text-sm font-bold">${formatCurrency(order.total_amount || 0, order.currency || 'TRY')}</span>
                             </div>
                         </div>
                     </section>
 
-                    <section class="mt-8 bg-green-50 p-4 rounded-md">
-                        <h3 class="text-md font-semibold text-gray-700 mb-2">Ödeme Koşulları</h3>
-                        <div class="text-sm text-gray-600">
+                    <section class="mt-6 border border-gray-300 p-3">
+                        <h3 class="text-xs font-semibold text-gray-900 mb-2 uppercase">Ödeme Koşulları</h3>
+                        <div class="text-xs text-gray-600">
                             <p><strong>Ödeme Tipi:</strong> ${order.paymentType || 'Peşin'}</p>
                             ${order.paymentType === 'Vadeli' && order.paymentTerm ? `<p><strong>Vade Süresi:</strong> ${order.paymentTerm} gün</p>` : ''}
-                            ${order.paymentType === 'Peşin' ? '<p class="mt-2 text-green-700 font-medium">✓ Peşin ödemede geçerlidir</p>' : ''}
                         </div>
                     </section>
 
-                    <section class="border-t-2 border-gray-300 pt-4">
-                        <div class="grid grid-cols-2 gap-4">
+                    ${order.notes ? `
+                    <section class="mt-6 border border-gray-300 p-3">
+                        <h3 class="text-xs font-semibold text-gray-900 mb-2 uppercase">Özel Notlar</h3>
+                        <p class="text-xs text-gray-600 whitespace-pre-wrap">${order.notes}</p>
+                    </section>
+                    ` : ''}
+
+                    <section class="mt-8 border-t border-gray-300 pt-6">
+                        <div class="grid grid-cols-2 gap-8">
                             <div class="text-center">
-                                <div class="h-28 border-b-2 border-gray-400 mb-3"></div>
-                                <p class="text-sm font-semibold text-gray-700">${companyInfo.name}</p>
+                                <div class="h-20 border-b border-gray-400 mb-2"></div>
+                                <p class="text-xs font-semibold text-gray-900">${companyInfo.name}</p>
                                 <p class="text-xs text-gray-500">Yetkili İmza ve Kaşe</p>
                             </div>
                             <div class="text-center">
-                                <div class="h-28 border-b-2 border-gray-400 mb-3"></div>
-                                <p class="text-sm font-semibold text-gray-700">${customer.name}</p>
+                                <div class="h-20 border-b border-gray-400 mb-2"></div>
+                                <p class="text-xs font-semibold text-gray-900">${customer.name}</p>
                                 <p class="text-xs text-gray-500">Müşteri İmza ve Kaşe</p>
                             </div>
                         </div>
                     </section>
 
-                    <footer class="mt-12 pt-6 border-t text-center text-xs text-gray-500">
+                    <footer class="mt-8 pt-4 border-t border-gray-300 text-center text-xs text-gray-500">
                         <p>Siparişiniz için teşekkür ederiz.</p>
-                        <p>Teslim tarihi: ${formatDate(order.delivery_date)}</p>
+                        <p class="mt-1">Teslim tarihi: ${formatDate(order.delivery_date)}</p>
                     </footer>
+                    </div>
                 </div>
-                <div class="text-center mt-8 no-print">
-                    <button onclick="window.print()" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700">Yazdır</button>
+                <div class="text-center mt-6 no-print">
+                    <button onclick="window.print()" class="bg-gray-900 text-white px-6 py-2 hover:bg-gray-800 text-sm font-medium">
+                        Yazdır / PDF Kaydet
+                    </button>
                 </div>
             </body>
             </html>
@@ -317,14 +347,28 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
                                 />
                             </th>
                             {['Müşteri', 'Sipariş Tarihi', 'Toplam Tutar', 'Durum', 'İşlemler'].map(h => (
-                                <th key={h} className="p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-300">
+                                <th key={h} className={`p-3 text-sm font-semibold tracking-wide text-left text-gray-700 dark:text-gray-300 ${h === 'İşlemler' ? 'text-right' : ''}`}>
                                     {h}
                                 </th>
                             ))}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {filteredOrders.length > 0 ? filteredOrders.map(order => (
+                        {filteredOrders.length > 0 ? filteredOrders.map(order => {
+                            const orderActions = [
+                                { label: 'Detay', onClick: () => handleOpenDetailModal(order) },
+                                { label: 'Düzenle', onClick: () => handleOpenModal(order) },
+                                { label: 'PDF', onClick: () => handlePrint(order) },
+                                { label: 'Özelleştir', onClick: () => onGeneratePdf(order) },
+                            ];
+
+                            if (order.status === 'Bekliyor' || order.status === 'Hazırlanıyor') {
+                                orderActions.unshift({ label: 'Sevk Et', onClick: () => handleOpenShipmentModal(order) });
+                            }
+
+                            orderActions.push({ label: 'Sil', onClick: () => handleDelete(order), destructive: true });
+
+                            return (
                             <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                 <td className="p-3 text-sm">
                                     <input
@@ -346,40 +390,15 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
                                         {order.status}
                                     </span>
                                 </td>
-                                <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
-                                    <div className="flex gap-3">
-                                        {(order.status === 'Bekliyor' || order.status === 'Hazırlanıyor') && (
-                                            <button
-                                                onClick={() => handleOpenShipmentModal(order)}
-                                                className="text-green-600 hover:underline dark:text-green-400"
-                                            >
-                                                Sevk Et
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => handleOpenModal(order)}
-                                            className="text-blue-500 hover:underline"
-                                        >
-                                            Düzenle
-                                        </button>
-                                        <button
-                                            onClick={() => handlePrint(order)}
-                                            className="text-purple-500 hover:underline dark:text-purple-400"
-                                        >
-                                            PDF
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(order)}
-                                            className="text-red-500 hover:underline"
-                                        >
-                                            Sil
-                                        </button>
+                                <td className="p-3 text-sm text-gray-700 dark:text-gray-300 text-right">
+                                    <div className="flex justify-end">
+                                        <ActionsDropdown actions={orderActions} />
                                     </div>
                                 </td>
                             </tr>
-                        )) : (
+                        )}) : (
                             <tr>
-                                <td colSpan="5" className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-gray-400">
                                     {searchQuery || statusFilter !== 'Tümü' ? 'Arama kriterlerine uygun sipariş bulunamadı.' : 'Henüz sipariş eklenmemiş.'}
                                 </td>
                             </tr>
@@ -390,7 +409,7 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
             <Modal
                 show={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                title={currentOrder ? 'Sipariş Detayı' : 'Yeni Sipariş Oluştur'}
+                title={currentOrder ? 'Sipariş Düzenle' : 'Yeni Sipariş Oluştur'}
                 maxWidth="max-w-4xl"
             >
                 <OrderForm
@@ -398,6 +417,19 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
                     onSave={handleSave}
                     onCancel={() => setIsModalOpen(false)}
                     customers={customers}
+                    products={products}
+                />
+            </Modal>
+
+            <Modal
+                show={isDetailModalOpen}
+                onClose={() => setIsDetailModalOpen(false)}
+                title="Sipariş Detayı"
+                maxWidth="max-w-4xl"
+            >
+                <OrderDetail
+                    order={currentOrder}
+                    customer={customers.find(c => c.id === currentOrder?.customerId)}
                     products={products}
                 />
             </Modal>
@@ -430,6 +462,8 @@ const Orders = ({ orders, onSave, onDelete, onShipment, customers, products }) =
             />
         </div>
     );
-};
+});
+
+Orders.displayName = 'Orders';
 
 export default Orders;

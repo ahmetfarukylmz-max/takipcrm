@@ -40,7 +40,7 @@ export const formatPhoneNumberForWhatsApp = (phone) => {
     if (!phone) return null;
 
     // Remove all spaces, dashes, parentheses
-    let formattedPhone = phone.replace(/[\s\(\)-]/g, '');
+    let formattedPhone = phone.replace(/[\s()-]/g, '');
 
     // If starts with 0, replace with 90 (Turkey country code)
     if (formattedPhone.startsWith('0')) {
@@ -88,4 +88,18 @@ export const getStatusClass = (status) => {
         default:
             return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
+};
+
+/**
+ * Checks if a given date string is today.
+ * @param {string} dateString - The date string to check.
+ * @returns {boolean} True if the date is today, false otherwise.
+ */
+export const isToday = (dateString) => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+           date.getMonth() === today.getMonth() &&
+           date.getFullYear() === today.getFullYear();
 };
